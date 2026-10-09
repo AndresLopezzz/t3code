@@ -19,7 +19,7 @@ import { useEnvironments } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
-import { SidebarHeaderIconButton } from "./sidebar/SidebarThreadHeader";
+import { SidebarMenuButton } from "./ui/sidebar";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -41,9 +41,10 @@ export function TerminalSessionsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <SidebarHeaderIconButton label="Open existing session" onClick={() => setOpen(true)}>
+      <SidebarMenuButton onClick={() => setOpen(true)}>
         <TerminalIcon />
-      </SidebarHeaderIconButton>
+        <span>Open existing session</span>
+      </SidebarMenuButton>
       <Dialog open={open} onOpenChange={setOpen}>
         {open ? <TerminalSessionsDialog onOpened={() => setOpen(false)} /> : null}
       </Dialog>
