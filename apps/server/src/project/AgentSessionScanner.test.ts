@@ -88,16 +88,26 @@ const runScan = (input: ScannerTestInput) =>
     return yield* scanner.scan;
   }).pipe(Effect.provide(layerScannerTest(input)));
 
-const runRecentThreadOutcomes = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreadOutcomes = (
+  input: ScannerTestInput & {
+    readonly workspaceRoot: string;
+    readonly mode?: "recent" | "existing";
+  },
+) =>
   Effect.gen(function* () {
     const scanner = yield* AgentSessionScanner.AgentSessionScanner;
-    return yield* scanner.recentThreads(input.workspaceRoot).pipe(
+    return yield* scanner.recentThreads(input.workspaceRoot, [], input.mode).pipe(
       Stream.runCollect,
       Effect.map((outcomes) => Array.from(outcomes)),
     );
   }).pipe(Effect.provide(layerScannerTest(input)));
 
-const runRecentThreads = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
+const runRecentThreads = (
+  input: ScannerTestInput & {
+    readonly workspaceRoot: string;
+    readonly mode?: "recent" | "existing";
+  },
+) =>
   runRecentThreadOutcomes(input).pipe(
     Effect.map((outcomes) =>
       outcomes.flatMap((outcome) => (outcome._tag === "Importable" ? [outcome.thread] : [])),
@@ -1486,6 +1496,17 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
           ["Review this code", "Looks good"],
           ["Fix the project", "Done"],
+        ]);
+        const existing = yield* runRecentThreads({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+          mode: "existing",
+        });
+        expect(existing.map((thread) => thread.providerSessionId)).toEqual([
+          "codex-recent",
+          "claude-recent",
+          "claude-old",
         ]);
       }),
     );

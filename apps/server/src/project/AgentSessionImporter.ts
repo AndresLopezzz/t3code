@@ -14,6 +14,8 @@ import {
   ProviderDriverKind,
   ThreadId,
   TurnItemId,
+  type AgentSessionCandidate,
+  type AgentSessionScanResult,
   type AgentSessionImportInput,
   type AgentSessionImportResult,
   type OrchestrationV2AppThread,
@@ -24,6 +26,8 @@ import {
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -90,9 +94,10 @@ function messageEvents(input: {
   readonly threadId: ThreadId;
   readonly index: number;
   readonly message: AgentSessionScanner.AgentSessionThreadMessage;
+  readonly identity?: string;
 }): ReadonlyArray<OrchestrationV2DomainEvent> {
   const ordinal = input.index + 1;
-  const suffix = String(input.index).padStart(6, "0");
+  const suffix = input.identity ?? String(input.index).padStart(6, "0");
   const messageId = MessageId.make(`${input.threadId}:${suffix}`);
   const turnItemId = TurnItemId.make(
     `${IMPORT_EVENT_PREFIX}:turn-item:${input.threadId}:${suffix}`,
@@ -167,6 +172,7 @@ function messageEvents(input: {
 
 const make = Effect.gen(function* () {
   const scanner = yield* AgentSessionScanner.AgentSessionScanner;
+  const crypto = yield* Crypto.Crypto;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projects = yield* ProjectService.ProjectService;
   const eventSink = yield* EventSink.EventSinkV2;
@@ -211,7 +217,11 @@ const make = Effect.gen(function* () {
       }
       return payload.value.importedTranscripts ?? [];
     });
-    const outcomes = scanner.recentThreads(project.workspaceRoot, completedSources);
+    const outcomes = scanner.recentThreads(
+      project.workspaceRoot,
+      input.session === undefined ? completedSources : [],
+      input.session === undefined ? "recent" : "existing",
+    );
     const importedThreadIds = new Set<ThreadId>();
     let importedCount = 0;
     let skippedCount = 0;
@@ -219,10 +229,16 @@ const make = Effect.gen(function* () {
     yield* Stream.runForEach(outcomes, (outcome) =>
       Effect.gen(function* () {
         if (outcome._tag === "Skipped") {
-          skippedCount += 1;
+          if (input.session === undefined) skippedCount += 1;
           return;
         }
         const source = outcome.source;
+        if (
+          input.session !== undefined &&
+          (source.providerInstanceId !== input.session.providerInstanceId ||
+            source.providerSessionId !== input.session.providerSessionId)
+        )
+          return;
         const threadId = ThreadId.make(
           `import:${source.providerInstanceId}:${source.providerSessionId}`,
         );
@@ -260,6 +276,61 @@ const make = Effect.gen(function* () {
             }
             if (existing.value.thread.historyOrigin !== "v1_import") {
               return yield* new AgentSessionThreadModifiedError({ threadId });
+            }
+            if (input.session === undefined) {
+              yield* runtimes.recordImportedTranscript({ threadId, source });
+              return true;
+            }
+            const records = yield* orchestrator.getThreadRecords(threadId, [
+              "messages",
+              "turnItems",
+              "runs",
+            ]);
+            // A running turn owns the transcript until it settles. Do not mark
+            // this file imported: a later refresh must still see its new tail.
+            if (records.runs.some((run) => run.completedAt === null)) {
+              return false;
+            }
+            const lastActivity = Math.max(
+              -Infinity,
+              ...records.messages.map((message) => DateTime.toEpochMillis(message.createdAt)),
+              ...records.runs.flatMap((run) =>
+                run.completedAt === null ? [] : [DateTime.toEpochMillis(run.completedAt)],
+              ),
+            );
+            const knownMessages = new Set(
+              records.messages.map((message) =>
+                JSON.stringify([message.role, message.text, DateTime.formatIso(message.createdAt)]),
+              ),
+            );
+            const newMessages = thread.messages.filter(
+              (message) =>
+                Date.parse(message.createdAt) > lastActivity &&
+                !knownMessages.has(JSON.stringify([message.role, message.text, message.createdAt])),
+            );
+            const lastOrdinal = Math.max(0, ...records.turnItems.map((item) => item.ordinal));
+            if (newMessages.length > 0) {
+              const events = yield* Effect.forEach(newMessages, (message, index) =>
+                crypto
+                  .digest(
+                    "SHA-256",
+                    new TextEncoder().encode(
+                      JSON.stringify([message.role, message.text, message.createdAt]),
+                    ),
+                  )
+                  .pipe(
+                    Effect.map((digest) =>
+                      messageEvents({
+                        threadId,
+                        index: lastOrdinal + index,
+                        message,
+                        // A stable identity survives moving transcript windows and retries.
+                        identity: Hex.encode(digest),
+                      }),
+                    ),
+                  ),
+              );
+              yield* eventSink.write({ events: events.flat() });
             }
             yield* runtimes.recordImportedTranscript({ threadId, source });
             return true;
@@ -396,7 +467,32 @@ const make = Effect.gen(function* () {
     return { importedCount, skippedCount } satisfies AgentSessionImportResult;
   });
 
-  return { importRecentAgentThreads };
+  const listFolderSessions = Effect.fn("AgentSessionImporter.listFolderSessions")(function* (
+    workspaceRoot: string,
+  ) {
+    const sessions: Array<AgentSessionCandidate> = [];
+    let truncated = false;
+    yield* scanner.recentThreads(workspaceRoot, [], "existing").pipe(
+      Stream.runForEach((outcome) =>
+        Effect.sync(() => {
+          if (outcome._tag === "Skipped") truncated = true;
+          if (outcome._tag === "Importable") {
+            const { providerInstanceId, providerSessionId, source, title, updatedAt } =
+              outcome.thread;
+            sessions.push({ providerInstanceId, providerSessionId, source, title, updatedAt });
+          }
+        }),
+      ),
+    );
+    return {
+      candidates: [],
+      sessions,
+      scannedAt: DateTime.formatIso(yield* DateTime.now),
+      truncated,
+    } satisfies AgentSessionScanResult;
+  });
+
+  return { importRecentAgentThreads, listFolderSessions };
 });
 
 type AgentSessionImporterShape = Effect.Success<typeof make>;

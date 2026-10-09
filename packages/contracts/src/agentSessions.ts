@@ -21,10 +21,12 @@ export const AgentSessionImportSource = Schema.Struct({
 export type AgentSessionImportSource = typeof AgentSessionImportSource.Type;
 
 /**
- * Empty for now. Kept as a struct so future scan options (source filters,
- * explicit roots) can be added without a new method.
+ * With a workspace root, list its native sessions without importing them.
+ * Without one, retain the existing project discovery used by onboarding.
  */
-export const AgentSessionScanInput = Schema.Struct({});
+export const AgentSessionScanInput = Schema.Struct({
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+});
 export type AgentSessionScanInput = typeof AgentSessionScanInput.Type;
 
 /**
@@ -61,9 +63,19 @@ export const AgentSessionProjectCandidate = Schema.Struct({
 });
 export type AgentSessionProjectCandidate = typeof AgentSessionProjectCandidate.Type;
 
+export const AgentSessionCandidate = Schema.Struct({
+  providerInstanceId: ProviderInstanceId,
+  providerSessionId: TrimmedNonEmptyString,
+  source: AgentSessionSource,
+  title: Schema.String,
+  updatedAt: IsoDateTime,
+});
+export type AgentSessionCandidate = typeof AgentSessionCandidate.Type;
+
 export const AgentSessionScanResult = Schema.Struct({
   candidates: Schema.Array(AgentSessionProjectCandidate),
   scannedAt: IsoDateTime,
+  sessions: Schema.optional(Schema.Array(AgentSessionCandidate)),
   truncated: Schema.optional(Schema.Boolean),
 });
 export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
@@ -71,6 +83,12 @@ export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
 export const AgentSessionImportInput = Schema.Struct({
   projectId: ProjectId,
   expectedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  session: Schema.optional(
+    Schema.Struct({
+      providerInstanceId: ProviderInstanceId,
+      providerSessionId: TrimmedNonEmptyString,
+    }),
+  ),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 

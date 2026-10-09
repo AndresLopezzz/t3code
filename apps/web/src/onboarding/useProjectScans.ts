@@ -8,13 +8,16 @@ import { agentSessionScan } from "../state/agentSessions";
 import { formatEnvironmentQueryError } from "../state/query";
 
 /** Subscribe to each selected computer without coupling their failures or refreshes. */
-export function useProjectScans(environmentIds: readonly EnvironmentId[]) {
+export function useProjectScans(environmentIds: readonly EnvironmentId[], workspaceRoot?: string) {
   const registry = useContext(RegistryContext);
   const scansAtom = useMemo(
     () =>
       Atom.make((get) =>
         environmentIds.map((environmentId) => {
-          const atom = agentSessionScan({ environmentId, input: {} });
+          const atom = agentSessionScan({
+            environmentId,
+            input: workspaceRoot === undefined ? {} : { workspaceRoot },
+          });
           const result = get(atom);
           return {
             environmentId,
@@ -25,7 +28,7 @@ export function useProjectScans(environmentIds: readonly EnvironmentId[]) {
           };
         }),
       ),
-    [environmentIds, registry],
+    [environmentIds, registry, workspaceRoot],
   );
   return useAtomValue(scansAtom);
 }
