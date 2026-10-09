@@ -2002,6 +2002,66 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("opens long existing Claude histories with their custom title", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-long-claude-");
+        const codexHomePath = yield* makeTempDir("t3code-long-codex-");
+        const workspace = yield* makeTempDir("t3code-long-workspace-");
+        const sessionId = "long-session";
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "long", `${sessionId}.jsonl`),
+          contents: [
+            encodeTranscriptRecord({
+              type: "user",
+              cwd: workspace,
+              sessionId,
+              message: { content: "Original prompt" },
+            }),
+            ...Array.from({ length: 1100 }, () =>
+              encodeTranscriptRecord({
+                type: "assistant",
+                sessionId,
+                message: { content: "x".repeat(16384) },
+              }),
+            ),
+            ...Array.from({ length: 100_001 }, () =>
+              encodeTranscriptRecord({
+                type: "attachment",
+                sessionId,
+                cwd: workspace,
+              }),
+            ),
+            encodeTranscriptRecord({
+              type: "custom-title",
+              sessionId,
+              customTitle: "Named terminal session",
+            }),
+          ].join("\n"),
+          mtimeMs: nowMs,
+        });
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+          mode: "existing",
+        });
+        expect(outcomes[0]).toMatchObject({
+          _tag: "Importable",
+          thread: {
+            providerSessionId: sessionId,
+            title: "Named terminal session",
+          },
+        });
+        if (outcomes[0]?._tag === "Importable") {
+          expect(outcomes[0].thread.messages).toHaveLength(200);
+          expect(outcomes[0].thread.messages[0]?.text).toBe("Original prompt");
+        }
+      }),
+    );
+
     it.effect("reports stat, read, and parse failures as skipped", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;

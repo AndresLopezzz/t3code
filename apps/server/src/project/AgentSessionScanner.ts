@@ -91,6 +91,8 @@ const RECENT_THREAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_IMPORTED_TRANSCRIPT_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_IMPORTED_MESSAGES = 200;
 const MAX_IMPORT_HISTORY_BYTES = 32 * 1024 * 1024;
+// Explicitly browsing existing sessions also covers long-lived terminal histories.
+const MAX_EXISTING_RECORDS = 1_000_000;
 const MAX_IMPORT_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_IMPORT_TRANSCRIPTS = 100;
 const MAX_IMPORT_RECORDS = 100_000;
@@ -116,6 +118,7 @@ const TranscriptRecord = Schema.Struct({
   cwd: Schema.optional(Schema.String),
   sessionId: Schema.optional(Schema.String),
   aiTitle: Schema.optional(Schema.String),
+  customTitle: Schema.optional(Schema.String),
   isSidechain: Schema.optional(Schema.Boolean),
   isMeta: Schema.optional(Schema.Boolean),
   isCompactSummary: Schema.optional(Schema.Boolean),
@@ -406,6 +409,7 @@ function parseAgentSessionRecords(
       }
       if (record.sessionId?.trim()) providerSessionId = record.sessionId.trim();
       if (record.aiTitle?.trim()) title = record.aiTitle.trim();
+      if (record.customTitle?.trim()) title = record.customTitle.trim();
       const messageModel = record.message?.model?.trim();
       // Claude uses this sentinel for local error responses. It is not a
       // model ID that can be selected when the imported session resumes.
@@ -523,6 +527,7 @@ function shouldRetainDecodedRecord(
       record.type === "assistant" ||
       record.sessionId !== undefined ||
       record.aiTitle !== undefined ||
+      record.customTitle !== undefined ||
       record.message?.model !== undefined
     );
   }
@@ -820,6 +825,7 @@ export const make = Effect.gen(function* () {
     expected: ReturnType<typeof transcriptIdentity>,
     recordLimit: number,
     source: AgentSessionSource,
+    compactClaudeHistory: boolean,
   ) {
     if (expected.size > MAX_IMPORTED_TRANSCRIPT_BYTES) return null;
 
@@ -832,6 +838,13 @@ export const make = Effect.gen(function* () {
             }
             const records: Array<DecodedTranscriptRecord> = [];
             let historyBytes = 0;
+            // Claude needs only the first prompt, recent visible messages and latest metadata.
+            // Discard older records while streaming instead of retaining years of tool traffic.
+            let metadata: DecodedTranscriptRecord = {};
+            let firstUser: DecodedTranscriptRecord | undefined;
+            const recentCosts: Array<number> = [];
+            const allocationSize = (record: DecodedTranscriptRecord) =>
+              JSON.stringify(record).length * 2 + 1024;
             let recordBytes = 0;
             let recordCount = 0;
             let bytesRead = 0;
@@ -853,8 +866,44 @@ export const make = Effect.gen(function* () {
               if (recordCount > recordLimit) return false;
               const decoded = decodeTranscriptValue(reader.finish());
               if (Option.isSome(decoded) && shouldRetainDecodedRecord(source, decoded.value)) {
-                records.push(decoded.value);
-                historyBytes += recordBytes;
+                if (compactClaudeHistory) {
+                  const record = decoded.value;
+                  if (
+                    record.isSidechain !== true &&
+                    record.isMeta !== true &&
+                    record.isCompactSummary !== true
+                  ) {
+                    metadata = {
+                      ...metadata,
+                      ...(metadata.cwd === undefined && record.cwd ? { cwd: record.cwd } : {}),
+                      ...(record.sessionId ? { sessionId: record.sessionId } : {}),
+                      ...(record.aiTitle ? { aiTitle: record.aiTitle } : {}),
+                      ...(record.customTitle ? { customTitle: record.customTitle } : {}),
+                      ...(record.message?.model && record.message.model !== "<synthetic>"
+                        ? { message: { model: record.message.model } }
+                        : {}),
+                    };
+                    if (
+                      (record.type === "user" || record.type === "assistant") &&
+                      extractText(record.message?.content).length > 0
+                    ) {
+                      if (record.type === "user" && firstUser === undefined) firstUser = record;
+                      records.push(record);
+                      recentCosts.push(allocationSize(record));
+                      if (records.length > MAX_IMPORTED_MESSAGES) {
+                        records.shift();
+                        recentCosts.shift();
+                      }
+                    }
+                    historyBytes =
+                      allocationSize(metadata) +
+                      (firstUser === undefined ? 0 : allocationSize(firstUser)) +
+                      recentCosts.reduce((total, bytes) => total + bytes, 0);
+                  }
+                } else {
+                  records.push(decoded.value);
+                  historyBytes += recordBytes;
+                }
               }
               recordBytes = 0;
               reader = createTranscriptJsonReader(reserve, selectTranscriptPath);
@@ -889,9 +938,16 @@ export const make = Effect.gen(function* () {
             }
 
             if (recordStarted && !(yield* Effect.try(finishRecord))) return null;
-            return sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))
-              ? { records, recordCount }
-              : null;
+            const after = transcriptIdentity(filePath, yield* file.stat);
+            if (!sameTranscriptIdentity(expected, after)) return null;
+            if (compactClaudeHistory) {
+              const history =
+                firstUser !== undefined && !records.includes(firstUser)
+                  ? [firstUser, ...records]
+                  : records;
+              return { records: [{ cwd: metadata.cwd }, ...history, metadata], recordCount };
+            }
+            return { records, recordCount };
           }),
         ),
       ),
@@ -1382,7 +1438,7 @@ export const make = Effect.gen(function* () {
     const importedSessions = new Set<string>();
     let bytesRemaining = MAX_IMPORT_BYTES;
     let transcriptsRemaining = MAX_IMPORT_TRANSCRIPTS;
-    let recordsRemaining = MAX_IMPORT_RECORDS;
+    let recordsRemaining = mode === "existing" ? MAX_EXISTING_RECORDS : MAX_IMPORT_RECORDS;
     return Stream.fromIteratorSucceed(eligibleTranscripts.values(), 1).pipe(
       Stream.mapEffect(({ candidate, transcript }) =>
         Effect.gen(function* () {
@@ -1429,6 +1485,7 @@ export const make = Effect.gen(function* () {
             identity,
             recordsRemaining,
             candidate.source,
+            mode === "existing" && candidate.source === "claudeAgent",
           );
           if (snapshot === null) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
