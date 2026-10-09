@@ -1,3 +1,4 @@
+import { isImportedNativeSession } from "./importedNativeSession.ts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -5225,7 +5226,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             nativeThreadId: `pending:${runId}`,
           });
         const legacyImportHandoff = shouldPrepareLegacyImportHandoff({
-          historyOrigin: projection.thread.historyOrigin,
+          historyOrigin: isImportedNativeSession(projection.thread, activeProviderThread)
+            ? undefined
+            : projection.thread.historyOrigin,
           hasCompletedRun: latestCompletedRun !== undefined,
           legacyImportItemCount: legacyImportItems.length,
         })

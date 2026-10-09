@@ -1,3 +1,4 @@
+import { isImportedNativeSession } from "../importedNativeSession.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
   dynamicToolTitle,
@@ -7338,7 +7339,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const hasPersistedProviderTurn =
             turnInput.nativeThreadHasTurns ?? turnInput.providerTurnOrdinal > 1;
           const shouldResume =
-            resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
+            resumeSessionAt !== undefined ||
+            openedWithResume ||
+            hasPersistedProviderTurn ||
+            isImportedNativeSession(turnInput.appThread, turnInput.providerThread);
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,

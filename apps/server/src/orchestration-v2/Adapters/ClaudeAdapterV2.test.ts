@@ -1827,7 +1827,11 @@ describe("ClaudeAdapterV2 native fork", () => {
 });
 
 describe("ClaudeAdapterV2 native session identity", () => {
-  const openTurnWithOrdinal = (providerTurnOrdinal: number, nativeThreadHasTurns?: boolean) =>
+  const openTurnWithOrdinal = (
+    providerTurnOrdinal: number,
+    nativeThreadHasTurns?: boolean,
+    imported = false,
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -1864,7 +1868,11 @@ describe("ClaudeAdapterV2 native session identity", () => {
             assertComplete: Effect.void,
           },
         });
-        const threadId = ThreadId.make("thread-claude-session-identity");
+        const threadId = ThreadId.make(
+          imported
+            ? "import:claudeAgent:native-session-identity"
+            : "thread-claude-session-identity",
+        );
         const providerSessionId = ProviderSessionId.make("provider-session-claude-identity");
         const runtime = yield* adapter.openSession({
           threadId,
@@ -1878,18 +1886,23 @@ describe("ClaudeAdapterV2 native session identity", () => {
           runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
         });
         const now = yield* DateTime.now;
-        yield* runtime.startTurn(
-          makeClaudeTestTurnInput({
-            threadId,
-            providerThread,
-            now,
-            attemptId: RunAttemptId.make("run-attempt-claude-session-identity"),
-            text: "Respond with identity ok",
-            attachments: [],
-            providerTurnOrdinal,
-            ...(nativeThreadHasTurns === undefined ? {} : { nativeThreadHasTurns }),
-          }),
-        );
+        const turn = makeClaudeTestTurnInput({
+          threadId,
+          providerThread,
+          now,
+          attemptId: RunAttemptId.make("run-attempt-claude-session-identity"),
+          text: "Respond with identity ok",
+          attachments: [],
+          providerTurnOrdinal,
+          ...(nativeThreadHasTurns === undefined ? {} : { nativeThreadHasTurns }),
+        });
+        yield* runtime.startTurn({
+          ...turn,
+          appThread: {
+            ...turn.appThread,
+            ...(imported ? { historyOrigin: "v1_import" as const } : {}),
+          },
+        });
         return openedQueries;
       }).pipe(
         Effect.provide(
@@ -1897,6 +1910,14 @@ describe("ClaudeAdapterV2 native session identity", () => {
         ),
       ),
     );
+
+  it.effect("resumes an imported terminal session on its first app turn", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(1, false, true);
+      assert.equal(openedQueries[0]?.options.resume, "native-session-identity");
+      assert.equal(openedQueries[0]?.options.sessionId, undefined);
+    }),
+  );
 
   it.effect("creates the native session on the first provider turn", () =>
     Effect.gen(function* () {

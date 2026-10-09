@@ -2452,10 +2452,12 @@ describe("orchestration v2 provider switching", () => {
     ),
   );
 
-  const importedFailureScenario = (queueBeforeFailure: boolean) =>
+  const importedFailureScenario = (queueBeforeFailure: boolean, nativeImport = false) =>
     Effect.scoped(
       Effect.gen(function* () {
-        const importedThreadId = ThreadId.make("thread:provider-switch:legacy-import");
+        const importedThreadId = ThreadId.make(
+          nativeImport ? "import:codex:terminal-native" : "thread:provider-switch:legacy-import",
+        );
         const importedProjectId = ProjectId.make("project:provider-switch:legacy-import");
         const failedPrompt = "This first provider attempt should fail.";
         const recoveryPrompt = "What was the imported release marker?";
@@ -2625,6 +2627,51 @@ describe("orchestration v2 provider switching", () => {
           yield* importer.reconcileShells;
           yield* maintenance.rebuild;
           yield* importer.ensureTranscript(importedThreadId);
+          if (nativeImport) {
+            const imported = yield* orchestrator.getThreadProjection(importedThreadId);
+            const now = yield* DateTime.now;
+            const nativeId = ProviderThreadId.make("provider-thread:imported-native");
+            yield* (yield* EventSink.EventSinkV2).write({
+              events: [
+                {
+                  id: EventId.make("imported-native-binding"),
+                  type: "provider-thread.updated",
+                  driver: CODEX_DRIVER,
+                  providerInstanceId: CODEX_MODEL_SELECTION.instanceId,
+                  threadId: importedThreadId,
+                  occurredAt: now,
+                  payload: {
+                    id: nativeId,
+                    driver: CODEX_DRIVER,
+                    providerInstanceId: CODEX_MODEL_SELECTION.instanceId,
+                    providerSessionId: null,
+                    appThreadId: importedThreadId,
+                    ownerNodeId: null,
+                    nativeThreadRef: {
+                      driver: CODEX_DRIVER,
+                      nativeId: "terminal-native",
+                      strength: "strong",
+                    },
+                    nativeConversationHeadRef: null,
+                    status: "idle",
+                    firstRunOrdinal: null,
+                    lastRunOrdinal: null,
+                    handoffIds: [],
+                    forkedFrom: null,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                },
+                {
+                  id: EventId.make("imported-native-thread-binding"),
+                  type: "thread.model-selection-updated",
+                  threadId: importedThreadId,
+                  occurredAt: now,
+                  payload: { ...imported.thread, activeProviderThreadId: nativeId },
+                },
+              ],
+            });
+          }
 
           yield* orchestrator.dispatch({
             type: "message.dispatch",
@@ -2710,11 +2757,16 @@ describe("orchestration v2 provider switching", () => {
             handoff.status,
           ]),
           [
-            [projection.runs[0]?.id, "manual_context", "ready"],
+            ...(nativeImport ? [] : [[projection.runs[0]?.id, "manual_context", "ready"]]),
             [projection.runs[1]?.id, "manual_context", "ready"],
             [projection.runs[1]?.id, "full_thread_summary", "ready"],
           ],
         );
+        if (nativeImport) {
+          assert.equal(turns[0]?.nativeThreadId, "terminal-native");
+          assert.isTrue(turns[0]?.nativeThreadHasTurns);
+          assert.equal(turns[0]?.text, failedPrompt);
+        }
         const recoveryHandoff = projection.contextHandoffs.find(
           (handoff) => handoff.id === projection.runs[1]?.contextHandoffId,
         );
@@ -2736,6 +2788,10 @@ describe("orchestration v2 provider switching", () => {
         assert.include(turns[1]?.text ?? "", failedPrompt);
       }),
     );
+
+  it.live("resumes imported terminal history without replaying a legacy summary", () =>
+    importedFailureScenario(false, true),
+  );
 
   it.live("reissues imported v1 context when switching after the first provider fails", () =>
     importedFailureScenario(false),

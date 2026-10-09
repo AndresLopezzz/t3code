@@ -1,3 +1,4 @@
+import { isImportedNativeSession } from "./importedNativeSession.ts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
@@ -239,9 +240,17 @@ export const layer: Layer.Layer<
       const checkpointScope = projection.checkpointScopes.find(
         (candidate) => candidate.id === rootNode?.checkpointScopeId,
       );
+      const importedNativeSession = isImportedNativeSession(projection.thread, providerThread);
       const handoffs = projection.contextHandoffs.filter(
         (handoff) =>
           handoff.status === "ready" &&
+          // A failed first app turn may have left the old importer summary pending.
+          !(
+            importedNativeSession &&
+            handoff.strategy === "manual_context" &&
+            handoff.fromProviderThreadIds.length === 0 &&
+            handoff.createdByProviderInstanceId === null
+          ) &&
           (handoff.targetRunId === run.id ||
             (handoff.toProviderThreadId === run.providerThreadId &&
               projection.runs.some(
@@ -1250,6 +1259,7 @@ export const layer: Layer.Layer<
         // Legacy accepted attempts have no native id. They count only before
         // a replacement, while no accepted attempt records a native identity.
         nativeThreadHasTurns:
+          isImportedNativeSession(projection.thread, runningProviderThread) ||
           nativeInputRunIds.size > 0 ||
           (legacyInputRunIds.size > 0 &&
             sameNativeThread &&
