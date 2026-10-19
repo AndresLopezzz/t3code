@@ -15,7 +15,7 @@ import {
   UserIcon,
   UserPenIcon,
 } from "lucide-react";
-import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 
 import { jiraIssueUrl, jiraKeyFromUrl } from "../lib/jiraIssues";
 import { cn } from "../lib/utils";
@@ -75,7 +75,7 @@ function JiraHtml({
   readonly threadRef: ScopedThreadRef;
   readonly className?: string;
 }) {
-  const clean = useMemo(() => sanitize(html), [html]);
+  const clean = sanitize(html);
   return (
     <div
       onClick={(event) => handleLinkClick(event, threadRef)}

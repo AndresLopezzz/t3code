@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { isActiveSubagentStatus } from "@t3tools/client-runtime/state/subagentRuntime";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 import { cn } from "../../lib/utils";
 import { useThreadProjection } from "../../state/entities";
@@ -21,10 +21,7 @@ export const SidebarSubagentRows = memo(function SidebarSubagentRows(props: {
   readonly activeThreadKey: string | null;
   readonly onOpen: (ref: ScopedThreadRef) => void;
 }) {
-  const parentRef = useMemo(
-    () => scopeThreadRef(props.thread.environmentId, props.thread.id),
-    [props.thread.environmentId, props.thread.id],
-  );
+  const parentRef = scopeThreadRef(props.thread.environmentId, props.thread.id);
   const allSubagents = useThreadProjection(parentRef)?.projection?.subagents;
   const subagents = (allSubagents ?? []).filter((subagent) =>
     isActiveSubagentStatus(subagent.status),

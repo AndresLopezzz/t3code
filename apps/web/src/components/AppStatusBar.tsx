@@ -11,7 +11,11 @@ import { memo, useEffect, useState } from "react";
 
 import { ensureLocalApi } from "../localApi";
 import { useDiscoveredPortsState } from "../portDiscoveryState";
-import { usePrimaryEnvironment, usePrimaryEnvironmentId } from "../state/environments";
+import {
+  usePrimaryEnvironment,
+  usePrimaryEnvironmentId,
+  useEnvironmentProviders,
+} from "../state/environments";
 import { previewEnvironment } from "../state/preview";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -113,8 +117,10 @@ function ProviderSummary({
 
 function UsageSection() {
   const primaryEnvironment = usePrimaryEnvironment();
+  const environmentProviders = useEnvironmentProviders();
   const providers = providersWithLimits(
-    primaryEnvironment?.serverConfig?.providers ?? EMPTY_PROVIDERS,
+    (primaryEnvironment ? environmentProviders.get(primaryEnvironment.environmentId) : undefined) ??
+      EMPTY_PROVIDERS,
   ).filter((provider) => (provider.usageLimits?.windows.length ?? 0) > 0);
   const [now, setNow] = useState(() => Date.now());
   if (providers.length === 0) return null;
@@ -280,8 +286,15 @@ function VpnSection() {
   };
 
   useEffect(() => {
-    void run();
-  }, [environmentId]);
+    if (environmentId === null) return;
+    let cancelled = false;
+    void setVpn({ environmentId, input: {} }).then((result) => {
+      if (!cancelled && result._tag === "Success") setConnected(result.value.connected);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [environmentId, setVpn]);
 
   const onClick = async () => {
     if (busy) return;

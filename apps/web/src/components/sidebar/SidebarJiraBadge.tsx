@@ -1,15 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { memo, useCallback } from "react";
-
-import { openJiraIssue } from "../JiraIssuePanel";
-
-/** Opens a thread's Jira issue in the right panel, like the PR badge opens its PR. */
-export function useOpenJiraIssue() {
-  return useCallback(
-    (threadRef: ScopedThreadRef, key: string) => openJiraIssue(threadRef, key),
-    [],
-  );
-}
+import { memo } from "react";
 
 export const SidebarJiraBadge = memo(function SidebarJiraBadge(props: {
   readonly issueKey: string;

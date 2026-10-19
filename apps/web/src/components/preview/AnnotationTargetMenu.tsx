@@ -1,7 +1,6 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { MessageSquareShareIcon } from "lucide-react";
-import { useMemo } from "react";
 
 import { useThreadShells } from "~/state/entities";
 import { Button } from "../ui/button";
@@ -26,20 +25,16 @@ export function AnnotationTargetMenu(props: {
   const threads = useThreadShells();
   const ownKey = scopedThreadKey(props.threadRef);
   // Unarchived chats not settled away, newest first, like the sidebar's active list.
-  const others = useMemo(
-    () =>
-      threads
-        .filter(
-          (thread) =>
-            thread.archivedAt === null &&
-            thread.settledOverride !== "settled" &&
-            (thread.settledAt === null || thread.settledOverride === "active") &&
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) !== ownKey,
-        )
-        .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .slice(0, MAX_TARGETS),
-    [threads, ownKey],
-  );
+  const others = threads
+    .filter(
+      (thread) =>
+        thread.archivedAt === null &&
+        thread.settledOverride !== "settled" &&
+        (thread.settledAt === null || thread.settledOverride === "active") &&
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) !== ownKey,
+    )
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, MAX_TARGETS);
   const value = props.target === null ? "" : scopedThreadKey(props.target);
   const targetTitle =
     props.target === null

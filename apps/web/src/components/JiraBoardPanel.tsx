@@ -1,7 +1,7 @@
 import type { JiraBoard, ScopedThreadRef } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { RefreshCwIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "../lib/utils";
 import { previewEnvironment } from "../state/preview";
@@ -71,17 +71,13 @@ export function JiraBoardPanel({ threadRef }: { readonly threadRef: ScopedThread
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
 
-  const issues = useMemo(
-    () =>
-      query.data?.issues.map((issue) => {
-        const status = moved[issue.key];
-        return status && status !== issue.status
-          ? { ...issue, status, statusCategory: "indeterminate" }
-          : issue;
-      }),
-    [query.data, moved],
-  );
-  const columns = useMemo(() => columnsOf(issues ?? [], showDone), [issues, showDone]);
+  const issues = query.data?.issues.map((issue) => {
+    const status = moved[issue.key];
+    return status && status !== issue.status
+      ? { ...issue, status, statusCategory: "indeterminate" }
+      : issue;
+  });
+  const columns = columnsOf(issues ?? [], showDone);
   const doneCount = issues?.filter((issue) => issue.statusCategory === "done").length ?? 0;
 
   const drop = async (key: string, toStatus: string) => {

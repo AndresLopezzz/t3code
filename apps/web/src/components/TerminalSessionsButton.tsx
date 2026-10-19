@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, RefreshCwIcon, TerminalIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { newProjectId } from "../lib/utils";
 import { resolveOnboardingProjectId } from "../onboarding/projectImport.logic";
@@ -72,18 +72,14 @@ function TerminalSessionsDialog({ onOpened }: { readonly onOpened: () => void })
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const attempts = useRef(new Map<string, ReturnType<typeof newProjectId>>());
-  const environmentIds = useMemo(
-    () =>
-      folder !== null
-        ? [folder.environmentId]
-        : environments
-            .filter(
-              (environment) =>
-                environment.entry.enabled && permitted.has(environment.environmentId),
-            )
-            .map((environment) => environment.environmentId),
-    [environments, permitted, folder],
-  );
+  const environmentIds =
+    folder !== null
+      ? [folder.environmentId]
+      : environments
+          .filter(
+            (environment) => environment.entry.enabled && permitted.has(environment.environmentId),
+          )
+          .map((environment) => environment.environmentId);
   const scans = useProjectScans(environmentIds, folder?.candidate.path);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const importSession = useAtomCommand(agentSessionImport, { reportFailure: false });
