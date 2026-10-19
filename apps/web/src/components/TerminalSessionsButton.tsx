@@ -19,7 +19,6 @@ import { useEnvironments } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
-import { SidebarMenuButton } from "./ui/sidebar";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -31,6 +30,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 type Folder = {
   readonly environmentId: EnvironmentId;
@@ -41,10 +41,21 @@ export function TerminalSessionsButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <SidebarMenuButton onClick={() => setOpen(true)}>
-        <TerminalIcon />
-        <span>Open existing session</span>
-      </SidebarMenuButton>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Open existing session"
+              onClick={() => setOpen(true)}
+              className="flex h-full shrink-0 items-center px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <TerminalIcon className="size-3" />
+            </button>
+          }
+        />
+        <TooltipPopup side="top">Open existing session</TooltipPopup>
+      </Tooltip>
       <Dialog open={open} onOpenChange={setOpen}>
         {open ? <TerminalSessionsDialog onOpened={() => setOpen(false)} /> : null}
       </Dialog>

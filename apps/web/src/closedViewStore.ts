@@ -63,6 +63,7 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
     case "diff":
     case "files":
     case "pull-requests":
+    case "jira-board":
       return surface.id === surface.kind;
     case "preview":
       return surface.resourceId === null || typeof surface.resourceId === "string";
@@ -93,6 +94,8 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
         (surface.host === undefined || typeof surface.host === "string") &&
         (surface.url === undefined || typeof surface.url === "string")
       );
+    case "jira-issue":
+      return typeof surface.key === "string" && surface.id === `jira-issue:${surface.key}`;
     default:
       return false;
   }

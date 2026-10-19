@@ -400,6 +400,107 @@ export const DiscoveredLocalServer = Schema.Struct({
 });
 export type DiscoveredLocalServer = typeof DiscoveredLocalServer.Type;
 
+export const LocalServerKillInput = Schema.Struct({
+  port: Schema.Int.check(Schema.isGreaterThan(0)).check(Schema.isLessThan(65536)),
+  pid: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type LocalServerKillInput = typeof LocalServerKillInput.Type;
+
+export class LocalServerKillError extends Schema.TaggedError<LocalServerKillError>()(
+  "LocalServerKillError",
+  { port: Schema.Number, pid: Schema.Number, reason: Schema.String },
+) {
+  override get message() {
+    return `Could not stop the process on port ${this.port}: ${this.reason}`;
+  }
+}
+
+// `up` omitted only reads the state; the work VPN is the `naowee` WireGuard interface.
+export const VpnSetInput = Schema.Struct({ up: Schema.optional(Schema.Boolean) });
+export type VpnSetInput = typeof VpnSetInput.Type;
+export const VpnStatus = Schema.Struct({ connected: Schema.Boolean });
+export type VpnStatus = typeof VpnStatus.Type;
+
+export class VpnSetError extends Schema.TaggedError<VpnSetError>()("VpnSetError", {
+  reason: Schema.String,
+}) {
+  override get message() {
+    return `VPN not changed: ${this.reason}`;
+  }
+}
+
+export const JiraIssueInput = Schema.Struct({
+  key: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9]{1,9}-[1-9]\d{0,5}$/)),
+});
+export type JiraIssueInput = typeof JiraIssueInput.Type;
+
+const JiraPerson = Schema.NullOr(Schema.String);
+// Description and comments are Jira's rendered HTML; the client sanitizes before showing it.
+export const JiraIssue = Schema.Struct({
+  key: Schema.String,
+  url: Schema.String,
+  summary: Schema.String,
+  status: Schema.String,
+  statusCategory: Schema.String,
+  issueType: Schema.String,
+  priority: JiraPerson,
+  assignee: JiraPerson,
+  reporter: JiraPerson,
+  created: Schema.String,
+  updated: Schema.String,
+  dueDate: Schema.NullOr(Schema.String),
+  labels: Schema.Array(Schema.String),
+  components: Schema.Array(Schema.String),
+  sprint: Schema.NullOr(Schema.String),
+  parent: Schema.NullOr(Schema.Struct({ key: Schema.String, summary: Schema.String })),
+  descriptionHtml: Schema.NullOr(Schema.String),
+  comments: Schema.Array(
+    Schema.Struct({ author: JiraPerson, created: Schema.String, bodyHtml: Schema.String }),
+  ),
+  transitions: Schema.Array(
+    Schema.Struct({ id: Schema.String, name: Schema.String, toStatus: Schema.String }),
+  ),
+});
+export type JiraIssue = typeof JiraIssue.Type;
+
+// The reader's own issues in open sprints; the board groups them by status.
+export const JiraBoardInput = Schema.Struct({});
+export type JiraBoardInput = typeof JiraBoardInput.Type;
+export const JiraBoard = Schema.Struct({
+  issues: Schema.Array(
+    Schema.Struct({
+      key: Schema.String,
+      summary: Schema.String,
+      status: Schema.String,
+      statusCategory: Schema.String,
+      issueType: Schema.String,
+      priority: JiraPerson,
+    }),
+  ),
+});
+export type JiraBoard = typeof JiraBoard.Type;
+
+export const JiraMoveInput = Schema.Struct({
+  key: JiraIssueInput.fields.key,
+  toStatus: Schema.String,
+});
+export type JiraMoveInput = typeof JiraMoveInput.Type;
+
+export const JiraTransitionInput = Schema.Struct({
+  key: JiraIssueInput.fields.key,
+  transitionId: Schema.String.check(Schema.isPattern(/^\d+$/)),
+});
+export type JiraTransitionInput = typeof JiraTransitionInput.Type;
+
+export class JiraIssueError extends Schema.TaggedError<JiraIssueError>()("JiraIssueError", {
+  key: Schema.String,
+  reason: Schema.String,
+}) {
+  override get message() {
+    return `Could not load ${this.key}: ${this.reason}`;
+  }
+}
+
 export const DiscoveredLocalServerList = Schema.Struct({
   servers: Schema.Array(DiscoveredLocalServer),
   scannedAt: Schema.String,

@@ -1,4 +1,8 @@
-import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import {
+  LocalServerKillError,
+  OrchestrationDispatchCommandError,
+  VpnSetError,
+} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 
@@ -104,6 +108,7 @@ import {
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import {
+  HttpClient,
   HttpRouter,
   HttpServerRequest,
   HttpServerRespondable,
@@ -188,6 +193,13 @@ import { attachmentRelativePath, createDeterministicAttachmentId } from "./attac
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
+import * as ProcessRunner from "./processRunner.ts";
+import {
+  fetchJiraBoard,
+  fetchJiraIssue,
+  moveJiraIssue,
+  transitionJiraIssue,
+} from "./jira/JiraIssues.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
@@ -1269,6 +1281,10 @@ const layerWsRpc = (
       const terminalManager = yield* TerminalManager.TerminalManager;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
+      const processRunner = yield* ProcessRunner.make();
+      const fileSystem = yield* FileSystem.FileSystem;
+      const httpClient = yield* HttpClient.HttpClient;
+      const jiraSecretsDir = (yield* ServerConfig.ServerConfig).secretsDir;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const modelManifest = yield* ModelManifest.ModelManifest;
       const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
@@ -2902,6 +2918,64 @@ const layerWsRpc = (
         [WS_METHODS.previewClose]: (input) => previewManager.close(input),
         [WS_METHODS.previewList]: (input) => previewManager.list(input),
         [WS_METHODS.previewClearProfile]: (input) => serverBrowser.clearProfile(input.profileId),
+        [WS_METHODS.localServerKill]: (input) =>
+          Effect.gen(function* () {
+            const fail = (reason: string) =>
+              Effect.fail(new LocalServerKillError({ ...input, reason }));
+            // Only a pid the scanner sees listening on that port, so the RPC cannot signal arbitrary processes.
+            const servers = yield* portDiscovery.scan();
+            if (!servers.some((server) => server.port === input.port && server.pid === input.pid)) {
+              return yield* fail("it is no longer listening");
+            }
+            if (input.pid === process.pid) return yield* fail("that is the T3 server itself");
+            yield* Effect.try({
+              try: () => process.kill(input.pid, "SIGTERM"),
+              catch: (cause) => new LocalServerKillError({ ...input, reason: String(cause) }),
+            });
+          }),
+        [WS_METHODS.vpnSet]: (input) =>
+          Effect.gen(function* () {
+            const connected = fileSystem
+              .exists("/sys/class/net/naowee")
+              .pipe(Effect.orElseSucceed(() => false));
+            if (input.up === undefined || input.up === (yield* connected)) {
+              return { connected: yield* connected };
+            }
+            // pkexec asks for the password through the desktop polkit dialog.
+            const result = yield* processRunner
+              .run({
+                command: "pkexec",
+                args: ["wg-quick", input.up ? "up" : "down", "naowee"],
+                timeout: "2 minutes",
+              })
+              .pipe(Effect.mapError((cause) => new VpnSetError({ reason: cause.message })));
+            if (result.code !== 0) {
+              return yield* new VpnSetError({
+                reason: result.stderr.trim() || `wg-quick exited with ${result.code}`,
+              });
+            }
+            return { connected: yield* connected };
+          }),
+        [WS_METHODS.jiraIssue]: (input) =>
+          fetchJiraIssue(jiraSecretsDir, input.key).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+          ),
+        [WS_METHODS.jiraMove]: (input) =>
+          moveJiraIssue(jiraSecretsDir, input.key, input.toStatus).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+          ),
+        [WS_METHODS.jiraBoard]: () =>
+          fetchJiraBoard(jiraSecretsDir).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+          ),
+        [WS_METHODS.jiraTransition]: (input) =>
+          transitionJiraIssue(jiraSecretsDir, input.key, input.transitionId).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+          ),
         [WS_METHODS.previewReportProfiles]: (input) => serverBrowser.reportProfiles(input),
         [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
         [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,

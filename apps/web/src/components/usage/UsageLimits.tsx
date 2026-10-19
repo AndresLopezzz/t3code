@@ -158,13 +158,15 @@ export function LimitWindows({
   windows,
   now,
   compact = false,
+  color = barColor(driver),
 }: {
   readonly driver: ServerProvider["driver"];
   readonly windows: ReadonlyArray<ServerProviderUsageWindow>;
   readonly now: number;
   readonly compact?: boolean;
+  /** Overrides the driver colour, e.g. to tell two accounts of one provider apart. */
+  readonly color?: string;
 }) {
-  const color = barColor(driver);
   return (
     <div
       className={

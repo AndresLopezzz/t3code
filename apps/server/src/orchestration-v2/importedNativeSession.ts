@@ -8,9 +8,11 @@ export function isImportedNativeSession(
     | undefined,
 ): boolean {
   const native = providerThread?.nativeThreadRef;
+  // Any instance: a switch only carries the native ref over when both share one history.
   return (
     thread.historyOrigin === "v1_import" &&
     native?.strength === "strong" &&
-    thread.id === `import:${providerThread?.providerInstanceId}:${native.nativeId}`
+    thread.id.startsWith("import:") &&
+    thread.id.endsWith(`:${native.nativeId}`)
   );
 }

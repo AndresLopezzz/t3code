@@ -264,6 +264,18 @@ import {
   PreviewResizeInput,
   PreviewAdjustInput,
   PreviewSessionSnapshot,
+  LocalServerKillError,
+  LocalServerKillInput,
+  VpnSetError,
+  JiraBoard,
+  JiraBoardInput,
+  JiraIssue,
+  JiraIssueError,
+  JiraIssueInput,
+  JiraMoveInput,
+  JiraTransitionInput,
+  VpnSetInput,
+  VpnStatus,
 } from "./preview.ts";
 import {
   DeviceActionInput,
@@ -445,6 +457,12 @@ export const WS_METHODS = {
   previewClose: "preview.close",
   previewList: "preview.list",
   previewClearProfile: "preview.clearProfile",
+  localServerKill: "localServer.kill",
+  vpnSet: "vpn.set",
+  jiraIssue: "jira.issue",
+  jiraTransition: "jira.transition",
+  jiraBoard: "jira.board",
+  jiraMove: "jira.move",
   previewReportProfiles: "preview.reportProfiles",
   previewReportStatus: "preview.reportStatus",
 
@@ -1477,6 +1495,39 @@ const WsPreviewClearProfileRpc = Rpc.make(WS_METHODS.previewClearProfile, {
   error: Schema.Union([PreviewClearProfileError, EnvironmentAuthorizationError]),
 });
 
+const WsLocalServerKillRpc = Rpc.make(WS_METHODS.localServerKill, {
+  payload: LocalServerKillInput,
+  error: Schema.Union([LocalServerKillError, EnvironmentAuthorizationError]),
+});
+
+const WsVpnSetRpc = Rpc.make(WS_METHODS.vpnSet, {
+  payload: VpnSetInput,
+  success: VpnStatus,
+  error: Schema.Union([VpnSetError, EnvironmentAuthorizationError]),
+});
+
+const WsJiraTransitionRpc = Rpc.make(WS_METHODS.jiraTransition, {
+  payload: JiraTransitionInput,
+  error: Schema.Union([JiraIssueError, EnvironmentAuthorizationError]),
+});
+
+const WsJiraMoveRpc = Rpc.make(WS_METHODS.jiraMove, {
+  payload: JiraMoveInput,
+  error: Schema.Union([JiraIssueError, EnvironmentAuthorizationError]),
+});
+
+const WsJiraBoardRpc = Rpc.make(WS_METHODS.jiraBoard, {
+  payload: JiraBoardInput,
+  success: JiraBoard,
+  error: Schema.Union([JiraIssueError, EnvironmentAuthorizationError]),
+});
+
+const WsJiraIssueRpc = Rpc.make(WS_METHODS.jiraIssue, {
+  payload: JiraIssueInput,
+  success: JiraIssue,
+  error: Schema.Union([JiraIssueError, EnvironmentAuthorizationError]),
+});
+
 const WsPreviewReportProfilesRpc = Rpc.make(WS_METHODS.previewReportProfiles, {
   payload: PreviewReportProfilesInput,
   error: EnvironmentAuthorizationError,
@@ -1962,6 +2013,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewCloseRpc,
   WsPreviewListRpc,
   WsPreviewClearProfileRpc,
+  WsLocalServerKillRpc,
+  WsVpnSetRpc,
+  WsJiraIssueRpc,
+  WsJiraTransitionRpc,
+  WsJiraBoardRpc,
+  WsJiraMoveRpc,
   WsPreviewReportProfilesRpc,
   WsPreviewReportStatusRpc,
   WsSubscribePreviewEventsRpc,

@@ -24,6 +24,8 @@ import {
   Globe2,
   Plus,
   TerminalSquare,
+  KanbanSquareIcon,
+  TicketIcon,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
 import {
@@ -127,6 +129,7 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
+  onAddJiraBoard?: (() => void) | undefined;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -316,6 +319,7 @@ function SurfaceMenuItem(props: {
  * surfaces stay visible with a one-line reason.
  */
 function RightPanelEmptyState(props: {
+  onAddJiraBoard?: (() => void) | undefined;
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
@@ -384,6 +388,14 @@ function RightPanelEmptyState(props: {
       available: props.pullRequestsAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
       onClick: props.onAddPullRequests,
+    },
+    {
+      label: "Jira board",
+      icon: KanbanSquareIcon,
+      shortcut: "J",
+      available: props.onAddJiraBoard !== undefined,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+      onClick: props.onAddJiraBoard ?? (() => undefined),
     },
     {
       label: "Device",
@@ -602,6 +614,10 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "jira-issue":
+      return surface.key;
+    case "jira-board":
+      return "Jira board";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -685,6 +701,10 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "jira-issue":
+      return <TicketIcon className="size-3 shrink-0" />;
+    case "jira-board":
+      return <KanbanSquareIcon className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -911,6 +931,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.pullRequestsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
       onClick: props.onAddPullRequests,
+    },
+    {
+      label: "Jira board",
+      icon: KanbanSquareIcon,
+      shortcut: "J",
+      available: props.onAddJiraBoard !== undefined,
+      disabledReason: SURFACE_DISABLED_REASONS.device,
+      onClick: props.onAddJiraBoard ?? (() => undefined),
     },
     {
       label: "Device",
@@ -1394,6 +1422,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
+            onAddJiraBoard={props.onAddJiraBoard}
             onAddBrowser={props.onAddBrowser}
             onAddBrowserInProfile={props.onAddBrowserInProfile}
             browserProfiles={browserProfiles}

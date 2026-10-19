@@ -2,6 +2,7 @@ import * as NodeOS from "node:os";
 
 import type { ClaudeSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -57,9 +58,18 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
   function* (
     config: Pick<ClaudeSettings, "homePath">,
     environment?: NodeJS.ProcessEnv,
-  ): Effect.fn.Return<string, never, Path.Path> {
+  ): Effect.fn.Return<string, never, Path.Path | FileSystem.FileSystem> {
     const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `claude:home:${resolvedHomePath}`;
+    // Accounts whose `projects/` symlinks to one shared history resume each other's sessions.
+    const path = yield* Path.Path;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const historyPath = path.join(resolvedHomePath, "projects");
+    const sharedHistory = yield* fileSystem
+      .realPath(historyPath)
+      .pipe(Effect.orElseSucceed(() => historyPath));
+    return sharedHistory !== historyPath
+      ? `claude:home:${path.dirname(sharedHistory)}`
+      : `claude:home:${resolvedHomePath}`;
   },
 );
 

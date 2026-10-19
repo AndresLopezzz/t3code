@@ -30,6 +30,8 @@ const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "pull-requests",
+  "jira-issue",
+  "jira-board",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -85,7 +87,9 @@ export type RightPanelSurface =
       url?: string;
     }
   /** The thread's linked pull requests, one singleton tab beside any number of `pull-request` tabs. */
-  | { id: "pull-requests"; kind: "pull-requests" };
+  | { id: "pull-requests"; kind: "pull-requests" }
+  | { id: `jira-issue:${string}`; kind: "jira-issue"; key: string }
+  | { id: "jira-board"; kind: "jira-board" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
@@ -137,7 +141,7 @@ interface RightPanelStoreState {
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "jira-issue">,
   ) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
@@ -155,6 +159,7 @@ interface RightPanelStoreState {
       url?: string;
     },
   ) => void;
+  openJiraIssue: (ref: ScopedThreadRef, key: string) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -180,7 +185,7 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "jira-issue">,
   ) => void;
   setThreadPanelOpen: (
     ref: ScopedThreadRef,
@@ -203,7 +208,7 @@ const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "jira-issue">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -212,6 +217,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "pull-requests":
       return { id: "pull-requests", kind };
+    case "jira-board":
+      return { id: "jira-board", kind };
     case "device":
       return { id: "device", kind };
   }
@@ -686,6 +693,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 }
               : next;
           }),
+        ),
+      openJiraIssue: (ref, key) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) =>
+            upsertSurface(current, { id: `jira-issue:${key}`, kind: "jira-issue", key }),
+          ),
         ),
       openFile: (ref, requestedPath, line) =>
         set((state) =>

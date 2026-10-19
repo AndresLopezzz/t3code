@@ -59,6 +59,7 @@ import { closePreviewSession } from "./closePreviewSession";
 import { openPreviewSession } from "./openPreviewSession";
 import { showPreviewPopup } from "./showPreviewPopup";
 import { PreviewChromeRow } from "./PreviewChromeRow";
+import { AnnotationTargetMenu } from "./AnnotationTargetMenu";
 import { PreviewEmptyState } from "./PreviewEmptyState";
 import { PreviewMoreMenu, type PreviewMoreMenuActions } from "./PreviewMoreMenu";
 import {
@@ -155,6 +156,10 @@ export function PreviewView({
     Boolean(onSendAnnotation);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
   const pickActiveRef = useRef<{ cancelled: boolean } | null>(null);
+  // Another chat chosen to receive annotations; null keeps them in this one.
+  const [annotationTarget, setAnnotationTarget] = useState<ScopedThreadRef | null>(null);
+  const annotationTargetRef = useRef(annotationTarget);
+  annotationTargetRef.current = annotationTarget;
   const isMountedRef = useRef(true);
   // Kept in sync so the title effect can depend on the stable thread key
   // instead of the thread object, which is recreated on every update.
@@ -849,7 +854,8 @@ export function PreviewView({
         // conversion can fail too. Either way the user should hear about it.
         const cropDropped = screenshotFailed || capture.status === "failed";
         const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
-        addPreviewAnnotation(threadRef, annotation);
+        const target = annotationTargetRef.current ?? threadRef;
+        addPreviewAnnotation(target, annotation);
         if (cropDropped) {
           toastManager.add(
             stackedThreadToast({
@@ -875,9 +881,14 @@ export function PreviewView({
               } satisfies ComposerImageAttachment)
             : null;
         if (image) {
-          addImage(threadRef, image);
+          addImage(target, image);
         }
-        if (
+        if (target !== threadRef) {
+          // Another chat's composer is not mounted here, so it waits in that chat's draft.
+          toastManager.add(
+            stackedThreadToast({ type: "success", title: "Annotation added to the selected chat" }),
+          );
+        } else if (
           submission === "send" &&
           readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
         ) {
@@ -956,11 +967,14 @@ export function PreviewView({
         case "reset-zoom":
           handleResetZoom();
           return;
+        case "annotate":
+          handlePickElement();
+          return;
         case "toggle-panel":
           return;
       }
     });
-  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
+  }, [handlePickElement, handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
 
   return (
     <div
@@ -1002,24 +1016,33 @@ export function PreviewView({
           isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
         }
         leadingActions={
-          // Only when it differs from the default: labelling every tab
-          // "Default" would be noise on the common case, while a tab in
-          // another profile is exactly what needs calling out.
-          activeProfileId !== browserDefaults.profileId ? (
-            // Capped: profile names run to 48 characters, and an unbounded
-            // badge in this row takes its width from the URL input, the only
-            // flexible element in the compact chrome. The cap sits on the
-            // badge and the truncation on an inner span, because `Badge` is an
-            // `inline-flex` with `whitespace-nowrap` — `text-overflow` never
-            // reaches a bare text node inside it, so the name would be cut off
-            // at both ends with no ellipsis.
-            <Tooltip>
-              <TooltipTrigger render={<Badge variant="outline" className="max-w-28 shrink-0" />}>
-                <span className="truncate">{activeProfileName}</span>
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeProfileName}</TooltipPopup>
-            </Tooltip>
-          ) : null
+          <>
+            {onSendAnnotation !== undefined && previewBridge && tabId && !isServerTab ? (
+              <AnnotationTargetMenu
+                threadRef={threadRef}
+                target={annotationTarget}
+                onTargetChange={setAnnotationTarget}
+              />
+            ) : null}
+            {/* Only when it differs from the default: labelling every tab
+                "Default" would be noise on the common case, while a tab in
+                another profile is exactly what needs calling out. */}
+            {activeProfileId !== browserDefaults.profileId ? (
+              // Capped: profile names run to 48 characters, and an unbounded
+              // badge in this row takes its width from the URL input, the only
+              // flexible element in the compact chrome. The cap sits on the
+              // badge and the truncation on an inner span, because `Badge` is an
+              // `inline-flex` with `whitespace-nowrap` — `text-overflow` never
+              // reaches a bare text node inside it, so the name would be cut off
+              // at both ends with no ellipsis.
+              <Tooltip>
+                <TooltipTrigger render={<Badge variant="outline" className="max-w-28 shrink-0" />}>
+                  <span className="truncate">{activeProfileName}</span>
+                </TooltipTrigger>
+                <TooltipPopup side="top">{activeProfileName}</TooltipPopup>
+              </Tooltip>
+            ) : null}
+          </>
         }
         trailingActions={
           moreMenuActions ? (

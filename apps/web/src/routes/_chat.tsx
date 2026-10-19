@@ -164,6 +164,14 @@ function ChatRouteGlobalShortcuts() {
       // The remaining preview commands only fire when the panel is the
       // currently-focused tenant. The `when: previewFocus` rule already
       // gates this, but defend against the keybinding being misconfigured.
+      // Works from the composer too: annotate while typing without reaching for the mouse.
+      if (command === "preview.annotate") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (canOperatePreview) dispatchPreviewAction("annotate");
+        return;
+      }
+
       if (
         command === "preview.refresh" ||
         command === "preview.focusUrl" ||

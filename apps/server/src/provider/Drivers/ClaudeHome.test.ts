@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
@@ -45,6 +46,23 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
           `claude\0${resolved}\0`,
         );
       }),
+    );
+
+    it.effect("groups a second account with the home whose projects/ it symlinks", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.realPath(yield* fileSystem.makeTempDirectoryScoped());
+        const main = path.join(root, "main");
+        const second = path.join(root, "second");
+        yield* fileSystem.makeDirectory(path.join(main, "projects"), { recursive: true });
+        yield* fileSystem.makeDirectory(second);
+        yield* fileSystem.symlink(path.join(main, "projects"), path.join(second, "projects"));
+
+        const mainKey = yield* makeClaudeContinuationGroupKey({ homePath: main });
+        expect(mainKey).toBe(`claude:home:${main}`);
+        expect(yield* makeClaudeContinuationGroupKey({ homePath: second })).toBe(mainKey);
+      }).pipe(Effect.scoped),
     );
 
     it.effect("uses inherited CLAUDE_CONFIG_DIR when homePath is empty", () =>

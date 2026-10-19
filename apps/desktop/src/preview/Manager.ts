@@ -115,6 +115,19 @@ export interface PreviewTabState {
   updatedAt: string;
 }
 
+// Recent page errors ride along with an annotation so the agent sees what was failing.
+const MAX_RECENT_CONSOLE_ERRORS = 10;
+const recentConsoleErrors = new Map<number, string[]>();
+
+function withRecentConsoleErrors(
+  payload: PreviewAnnotationPayload,
+  errors: ReadonlyArray<string> | undefined,
+): PreviewAnnotationPayload {
+  if (!errors || errors.length === 0) return payload;
+  const list = errors.map((error) => `- ${error}`).join("\n");
+  return { ...payload, comment: `${payload.comment}\n\nRecent console errors:\n${list}` };
+}
+
 /** Discrete zoom levels mirroring Chrome's preset list. */
 const ZOOM_LEVELS: ReadonlyArray<number> = [
   0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
@@ -1570,6 +1583,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         return;
       }
     };
+    const recordConsoleError = (
+      event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>,
+    ): void => {
+      if (event.level !== "error") return;
+      const errors = recentConsoleErrors.get(wc.id) ?? [];
+      errors.push(event.message.slice(0, 500));
+      recentConsoleErrors.set(wc.id, errors.slice(-MAX_RECENT_CONSOLE_ERRORS));
+    };
     yield* Scope.addFinalizer(
       scope,
       attempt({ operation: "detachListeners", tabId, webContentsId: wc.id }, () => {
@@ -1584,6 +1605,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("dom-ready", restoreRecordingCursor);
         wc.off("did-fail-load", failed as never);
         wc.off("audio-state-changed", audioStateChanged);
+        wc.off("console-message", recordConsoleError);
+        recentConsoleErrors.delete(wc.id);
         wc.off("did-create-window", windowCreated);
         wc.off("before-input-event", beforeInput);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
@@ -1606,6 +1629,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("dom-ready", restoreRecordingCursor);
         wc.on("did-fail-load", failed as never);
         wc.on("audio-state-changed", audioStateChanged);
+        wc.on("console-message", recordConsoleError);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.on(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
@@ -2241,11 +2265,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           resume(Effect.succeed(null));
         });
         const onMessage = (_event: Electron.IpcMainEvent, ...args: unknown[]): void => {
-          const payload = args[0];
-          if (!isPreviewAnnotationPayload(payload)) {
+          const picked = args[0];
+          if (!isPreviewAnnotationPayload(picked)) {
             settle(null);
             return;
           }
+          const payload = withRecentConsoleErrors(picked, recentConsoleErrors.get(wc.id));
+          recentConsoleErrors.delete(wc.id);
           const cropRect = normalizeCaptureRect(args[1]);
           const submission =
             args[2] === "send" && annotationSendEnabled.get(tabId) === true ? "send" : "attach";

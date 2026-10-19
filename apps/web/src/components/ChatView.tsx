@@ -283,6 +283,8 @@ import {
   threadPullRequestPanelTarget,
 } from "./pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
+import { JiraBoardPanel } from "./JiraBoardPanel";
+import { JiraIssuePanel } from "./JiraIssuePanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
@@ -11057,6 +11059,14 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "jira-board" && activeThreadRef ? (
+      <JiraBoardPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "jira-issue" && activeThreadRef ? (
+      <JiraIssuePanel
+        key={renderedRightPanelSurface.id}
+        threadRef={activeThreadRef}
+        issueKey={renderedRightPanelSurface.key}
+      />
     ) : renderedRightPanelSurface?.kind === "device" ? (
       <Suspense fallback={null}>
         <DevicePanel
@@ -11956,6 +11966,11 @@ export default function ChatView(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddPullRequests={addPullRequestsSurface}
+          onAddJiraBoard={
+            activeThreadRef
+              ? () => useRightPanelStore.getState().open(activeThreadRef, "jira-board")
+              : undefined
+          }
           onAddDevice={addDeviceSurface}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
@@ -12014,6 +12029,11 @@ export default function ChatView(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}
+            onAddJiraBoard={
+              activeThreadRef
+                ? () => useRightPanelStore.getState().open(activeThreadRef, "jira-board")
+                : undefined
+            }
             onAddDevice={addDeviceSurface}
             browserAvailable={canOperatePreview && browserAvailable}
             terminalAvailable={activeProject !== null && canOperateTerminal}

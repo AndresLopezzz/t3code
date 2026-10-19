@@ -198,6 +198,8 @@ import {
   resolvePullRequestPreviewTarget,
   useOpenChangeRequestLink,
 } from "~/lib/openPullRequestLink";
+import { jiraKeyFromUrl, remarkJiraAutolinks } from "~/lib/jiraIssues";
+import { openJiraIssue } from "./JiraIssuePanel";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -2515,6 +2517,13 @@ function useChatMarkdownState({
   );
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
+      const jiraKey = threadRef ? jiraKeyFromUrl(url) : null;
+      if (threadRef && jiraKey) {
+        openJiraIssue(threadRef, jiraKey);
+        return Promise.resolve(
+          AsyncResult.success<void, BrowserPreviewUnavailableError>(undefined),
+        );
+      }
       if (!threadRef || !canOperatePreview) {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
@@ -3013,6 +3022,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
             ) {
               return;
             }
+            const jiraKey = threadRef ? jiraKeyFromUrl(href) : null;
+            if (threadRef && jiraKey && !event.defaultPrevented) {
+              event.preventDefault();
+              event.stopPropagation();
+              openJiraIssue(threadRef, jiraKey);
+              return;
+            }
             // Anything else follows the "Open links in" setting. The system browser
             // keeps the `_blank` the shell already handles; the in-app browser needs
             // the click intercepted here. A modifier click is the way out of the
@@ -3402,6 +3418,7 @@ function ChatMarkdown({
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
       ...extraRemarkPlugins,
+      remarkJiraAutolinks,
       ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
     ],
     [extraRemarkPlugins, incrementalParsing, lineBreaks],
