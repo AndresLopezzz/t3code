@@ -14,6 +14,7 @@ import {
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
   setSidebarProjectScopeKey,
+  setCheckpointReview,
   setThreadChangedFilesExpanded,
   type UiState,
 } from "./uiStateStore";
@@ -25,6 +26,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     sidebarProjectScopeKey: null,
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
+    threadCheckpointReviewById: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
     ...overrides,
@@ -40,6 +42,32 @@ describe("uiStateStore pure functions", () => {
     expect(visited.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:30:00.700Z");
     expect(markThreadVisited(visited, threadId, "2026-02-25T12:30:00.000Z")).toBe(visited);
     expect(markThreadVisited(visited, threadId, "not-a-date")).toBe(visited);
+  });
+
+  it("records a checkpoint review by checkpoint id until it is cleared", () => {
+    const threadKey = "env-1:thread-1";
+    const reviewed = setCheckpointReview(makeUiState(), threadKey, "checkpoint-2", "kept");
+
+    expect(reviewed.threadCheckpointReviewById[threadKey]).toEqual({ "checkpoint-2": "kept" });
+    expect(setCheckpointReview(reviewed, threadKey, "checkpoint-2", "kept")).toBe(reviewed);
+    expect(
+      setCheckpointReview(reviewed, threadKey, "checkpoint-2", null).threadCheckpointReviewById[
+        threadKey
+      ]?.["checkpoint-2"],
+    ).toBeUndefined();
+  });
+
+  it("drops persisted checkpoint reviews that are not kept or undone", () => {
+    const state = parsePersistedState({
+      threadCheckpointReviewById: {
+        "env-1:thread-a": { "checkpoint-1": "kept", "checkpoint-2": "undone", "checkpoint-3": "x" },
+        "env-1:thread-b": { "checkpoint-4": 1 },
+      },
+    } as unknown as PersistedUiState);
+
+    expect(state.threadCheckpointReviewById).toEqual({
+      "env-1:thread-a": { "checkpoint-1": "kept", "checkpoint-2": "undone" },
+    });
   });
 
   it("marks a completed thread unread using the server completion timestamp", () => {
@@ -209,6 +237,7 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      threadCheckpointReviewById: {},
     });
   });
 
@@ -331,6 +360,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      threadCheckpointReviewById: {},
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({

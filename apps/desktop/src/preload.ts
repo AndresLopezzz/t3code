@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   getClientPlatform: () => clientPlatform,
+  // The renderer must follow the window created at startup, including after a reload.
+  getNativeWindowGlassEnabled: () => process.argv.includes("--t3-native-window-glass"),
   setNotificationBadge: (badge) =>
     ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
   onNotificationBadgeClear: (listener) => {

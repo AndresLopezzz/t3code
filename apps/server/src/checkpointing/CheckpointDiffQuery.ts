@@ -12,7 +12,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { checkpointRefForScopeOrdinal } from "../orchestration-v2/CheckpointService.ts";
+import {
+  checkpointRefForScopeOrdinal,
+  checkpointRefForRunStart,
+} from "../orchestration-v2/CheckpointService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import {
   CheckpointDiffResultInvalidError,
@@ -165,7 +168,7 @@ export const make = Effect.gen(function* () {
         input.fromTurnCount === 0
           ? projection.checkpointScopes.find((scope) => scope.kind === "root_run")
           : undefined;
-      const fromCheckpointRef =
+      let fromCheckpointRef =
         input.fromTurnCount === 0
           ? firstScope === undefined
             ? undefined
@@ -175,6 +178,13 @@ export const make = Effect.gen(function* () {
               }).pipe(Effect.provideService(Crypto.Crypto, crypto))
           : readyCheckpoints.find((checkpoint) => checkpoint.appRunOrdinal === input.fromTurnCount)
               ?.ref;
+      if (input.toTurnCount === input.fromTurnCount + 1 && toCheckpoint.runId !== null) {
+        const startRef = yield* checkpointRefForRunStart(toCheckpoint.runId).pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+        );
+        if (yield* checkpointStore.hasCheckpointRef({ cwd: toScope.cwd, checkpointRef: startRef }))
+          fromCheckpointRef = startRef;
+      }
       if (fromCheckpointRef === undefined) {
         return yield* new CheckpointRefUnavailableError({
           operation,

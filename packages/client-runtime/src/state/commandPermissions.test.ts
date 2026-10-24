@@ -14,6 +14,7 @@ import {
   EnvironmentId,
   ScheduledTaskId,
   WS_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
   type AuthSessionState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -59,6 +60,29 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
+  it.effect("requires the destination source-control grant to undo files", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const undo = createCommandPermissions(runtime, ORCHESTRATION_V2_WS_METHODS.undoChanges);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(undo.permissionAtom(env))).toBe(false);
+        expect((yield* undo.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+          AuthSourceControlWriteScope,
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSourceControlWriteScope],
+            permissions: [AuthSourceControlWriteScope],
+          }),
+        );
+        yield* undo.authorize(registry, env);
+        expect(registry.get(undo.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
   it.effect("requires the destination settings grant to run storage cleanup", () =>
     Effect.scoped(
       Effect.gen(function* () {

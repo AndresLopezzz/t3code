@@ -579,6 +579,42 @@ describe("ClientSettings recording input overlays", () => {
   });
 });
 
+describe("ClientSettings desktop glass and project columns", () => {
+  it("keeps existing clients opaque and in the current sidebar layout", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      nativeWindowGlassEnabled: false,
+      windowBackgroundOpacity: 80,
+      gridArcadeEnabled: true,
+      projectColumnEnabled: false,
+    });
+  });
+
+  it.each([true, false])("persists opt-in settings and allows turning them off: %s", (enabled) => {
+    const patch = { nativeWindowGlassEnabled: enabled, projectColumnEnabled: enabled };
+    expect(decodeClientSettingsPatch(patch)).toEqual(patch);
+    expect(decodeClientSettings(patch)).toMatchObject(patch);
+  });
+});
+
+describe("ClientSettings window background opacity", () => {
+  it.each([0, 25, 65, 100])(
+    "accepts background opacity %s independently of floating surfaces",
+    (value) => {
+      expect(decodeClientSettings({ windowBackgroundOpacity: value })).toMatchObject({
+        windowBackgroundOpacity: value,
+        glassOpacity: 80,
+      });
+      expect(decodeClientSettingsPatch({ windowBackgroundOpacity: value })).toEqual({
+        windowBackgroundOpacity: value,
+      });
+    },
+  );
+  it.each([-1, 101, 50.5])("rejects invalid background opacity %s", (value) => {
+    expect(() => decodeClientSettings({ windowBackgroundOpacity: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ windowBackgroundOpacity: value })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

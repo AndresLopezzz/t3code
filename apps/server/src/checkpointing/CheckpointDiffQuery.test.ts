@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { checkpointRefForScopeOrdinal } from "../orchestration-v2/CheckpointService.ts";
+import { checkpointRefForRunStart } from "../orchestration-v2/CheckpointService.ts";
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import type { ProjectionCheckpointContext } from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -49,6 +50,7 @@ function layerFor(input: {
   readonly projection: Effect.Effect<ProjectionCheckpointContext, OrchestratorProjectionError>;
   readonly diffCheckpoints?: CheckpointStore.CheckpointStore["Service"]["diffCheckpoints"];
   readonly authoredPaths?: ReadonlySet<string>;
+  readonly hasTurnStart?: boolean;
 }) {
   return CheckpointDiffQuery.layer.pipe(
     Layer.provide(
@@ -59,12 +61,35 @@ function layerFor(input: {
         Layer.mock(CheckpointStore.CheckpointStore)({
           diffCheckpoints: input.diffCheckpoints ?? (() => Effect.succeed("diff")),
           listAuthoredPaths: () => Effect.succeed(input.authoredPaths ?? null),
+          hasCheckpointRef: () => Effect.succeed(input.hasTurnStart ?? false),
         }),
       ),
     ),
     Layer.provideMerge(NodeCrypto.layer),
   );
 }
+
+it.effect("shows the exact run-start diff instead of changes made between turns", () => {
+  const diffCheckpoints = vi.fn((_input: CheckpointStore.DiffCheckpointsInput) =>
+    Effect.succeed("patch"),
+  );
+  return Effect.gen(function* () {
+    const query = yield* CheckpointDiffQuery.CheckpointDiffQuery;
+    yield* query.getTurnDiff({ threadId, fromTurnCount: 1, toTurnCount: 2 });
+    assert.equal(
+      diffCheckpoints.mock.calls[0]?.[0].fromCheckpointRef,
+      yield* checkpointRefForRunStart(secondRunId),
+    );
+  }).pipe(
+    Effect.provide(
+      layerFor({
+        projection: Effect.succeed(makeProjection()),
+        diffCheckpoints,
+        hasTurnStart: true,
+      }),
+    ),
+  );
+});
 
 it.effect("computes V2 run diffs from projected checkpoint scopes", () => {
   const diffCheckpoints = vi.fn((_input: CheckpointStore.DiffCheckpointsInput) =>

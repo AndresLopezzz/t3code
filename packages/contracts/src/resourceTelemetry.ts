@@ -12,6 +12,13 @@ export const HostResourcesSnapshot = Schema.Struct({
   cpuCount: NonNegativeInt,
   availableMemoryBytes: NonNegativeInt,
   totalMemoryBytes: NonNegativeInt,
+  batteryPercent: Schema.optionalKey(
+    Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
+  ),
+  batteryState: Schema.optionalKey(Schema.Literals(["charging", "discharging", "full", "unknown"])),
+  cpuTemperatureCelsius: Schema.optionalKey(
+    Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 150 }))),
+  ),
 });
 export type HostResourcesSnapshot = typeof HostResourcesSnapshot.Type;
 

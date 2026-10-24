@@ -29,6 +29,7 @@ export interface PersistedUiState {
   sidebarProjectScopeKey?: string | null;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  threadCheckpointReviewById?: Record<string, Record<string, CheckpointReviewStatus>>;
   pullRequestMergeMethod?: string;
 }
 
@@ -38,9 +39,13 @@ export interface UiProjectState {
   sidebarProjectScopeKey: string | null;
 }
 
+export type CheckpointReviewStatus = "kept" | "undone";
+
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  /** Keyed by scoped thread key, then checkpoint id. Ordinals are never used as keys. */
+  threadCheckpointReviewById: Record<string, Record<string, CheckpointReviewStatus>>;
 }
 
 export interface UiEndpointState {
@@ -60,6 +65,7 @@ const initialState: UiState = {
   sidebarProjectScopeKey: null,
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
+  threadCheckpointReviewById: {},
   defaultAdvertisedEndpointKey: null,
   pullRequestMergeMethod: "merge",
 };
@@ -91,6 +97,32 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
     Object.entries(value).filter(
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
     ),
+  );
+}
+
+function isCheckpointReviewStatus(value: unknown): value is CheckpointReviewStatus {
+  return value === "kept" || value === "undone";
+}
+
+function sanitizeCheckpointReviewRecord(
+  value: unknown,
+): Record<string, Record<string, CheckpointReviewStatus>> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([threadKey, reviews]) => {
+      if (threadKey.length === 0 || !reviews || typeof reviews !== "object") {
+        return [];
+      }
+      const sanitized = Object.fromEntries(
+        Object.entries(reviews).filter(
+          (entry): entry is [string, CheckpointReviewStatus] =>
+            entry[0].length > 0 && isCheckpointReviewStatus(entry[1]),
+        ),
+      );
+      return Object.keys(sanitized).length > 0 ? [[threadKey, sanitized]] : [];
+    }),
   );
 }
 
@@ -149,6 +181,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
+    threadCheckpointReviewById: sanitizeCheckpointReviewRecord(parsed.threadCheckpointReviewById),
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
@@ -227,6 +260,7 @@ export function persistState(state: UiState): void {
         sidebarProjectScopeKey: state.sidebarProjectScopeKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        threadCheckpointReviewById: state.threadCheckpointReviewById,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
@@ -309,6 +343,28 @@ export function setThreadChangedFilesExpanded(
         [turnId]: expanded,
       },
     },
+  };
+}
+
+export function setCheckpointReview(
+  state: UiState,
+  threadKey: string,
+  checkpointId: string,
+  status: CheckpointReviewStatus | null,
+): UiState {
+  const currentReviews = state.threadCheckpointReviewById[threadKey];
+  if (currentReviews?.[checkpointId] === (status ?? undefined)) {
+    return state;
+  }
+  const reviews = { ...currentReviews };
+  if (status === null) {
+    delete reviews[checkpointId];
+  } else {
+    reviews[checkpointId] = status;
+  }
+  return {
+    ...state,
+    threadCheckpointReviewById: { ...state.threadCheckpointReviewById, [threadKey]: reviews },
   };
 }
 
@@ -421,6 +477,11 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  setCheckpointReview: (
+    threadKey: string,
+    checkpointId: string,
+    status: CheckpointReviewStatus | null,
+  ) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
@@ -440,6 +501,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  setCheckpointReview: (threadKey, checkpointId, status) =>
+    set((state) => setCheckpointReview(state, threadKey, checkpointId, status)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setSidebarProjectScopeKey: (projectKey) =>

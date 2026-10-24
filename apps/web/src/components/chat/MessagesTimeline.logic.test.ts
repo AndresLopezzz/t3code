@@ -1343,6 +1343,128 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.assistantTurnDiffSummary).toBe(assistantTurnDiffSummary);
   });
 
+  describe("turn review (Keep / Undo)", () => {
+    // Two finished turns with file changes; turn 2 is the latest.
+    function deriveTwoTurnRows(
+      input: {
+        checkpointReviews?: Record<string, "kept" | "undone">;
+        checkpointIdOverrides?: Record<number, string>;
+        supportsConversationRollback?: boolean;
+        isWorking?: boolean;
+      } = {},
+    ) {
+      const turnDiffSummaries = [1, 2].map((turn) => ({
+        runId: `turn-${turn}` as never,
+        completedAt: `2026-01-01T00:0${turn}:30Z`,
+        assistantMessageId: `assistant-${turn}` as never,
+        checkpointId: (input.checkpointIdOverrides?.[turn] ?? `checkpoint-${turn}`) as never,
+        checkpointTurnCount: turn,
+        checkpointRef: `checkpoint-${turn}` as never,
+        status: "ready" as const,
+        files: [{ path: `src/file-${turn}.ts`, kind: "modified", additions: 1, deletions: 0 }],
+      }));
+      const timelineEntries = [1, 2].flatMap((turn) => [
+        {
+          id: `user-entry-${turn}`,
+          kind: "message" as const,
+          createdAt: `2026-01-01T00:0${turn}:00Z`,
+          message: {
+            id: `user-${turn}` as never,
+            role: "user" as const,
+            text: `Prompt ${turn}`,
+            runId: `turn-${turn}` as never,
+            inputIntent: "turn_start" as const,
+            createdAt: `2026-01-01T00:0${turn}:00Z`,
+            updatedAt: `2026-01-01T00:0${turn}:00Z`,
+            streaming: false,
+          },
+        },
+        {
+          id: `assistant-entry-${turn}`,
+          kind: "message" as const,
+          createdAt: `2026-01-01T00:0${turn}:20Z`,
+          message: {
+            id: `assistant-${turn}` as never,
+            role: "assistant" as const,
+            text: `Done ${turn}`,
+            runId: `turn-${turn}` as never,
+            createdAt: `2026-01-01T00:0${turn}:20Z`,
+            updatedAt: `2026-01-01T00:0${turn}:30Z`,
+            streaming: false,
+          },
+        },
+      ]);
+      return deriveMessagesTimelineRows({
+        timelineEntries,
+        isWorking: input.isWorking ?? false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries,
+        supportsConversationRollback: input.supportsConversationRollback ?? true,
+        checkpointReviews: input.checkpointReviews,
+      });
+    }
+    const messageRow = (rows: ReturnType<typeof deriveTwoTurnRows>, id: string) =>
+      rows.find(
+        (row): row is Extract<(typeof rows)[number], { kind: "message" }> =>
+          row.kind === "message" && row.message.id === id,
+      );
+
+    it("offers Keep and Undo only on the latest turn with changes", () => {
+      const rows = deriveTwoTurnRows();
+
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+      expect(messageRow(rows, "assistant-2")?.turnReview?.checkpoint.checkpointId).toBe(
+        "checkpoint-2",
+      );
+      expect(messageRow(rows, "assistant-1")?.turnReview).toBeUndefined();
+    });
+
+    it("keeps the review when the provider cannot roll back the conversation", () => {
+      const rows = deriveTwoTurnRows({ supportsConversationRollback: false });
+
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+    });
+
+    it("locks Edit from here on the kept turn and the turns before it only", () => {
+      const rows = deriveTwoTurnRows({ checkpointReviews: { "turn-1:checkpoint-1": "kept" } });
+
+      expect(messageRow(rows, "assistant-1")?.turnReview?.status).toBe("kept");
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+      expect(messageRow(rows, "user-1")?.revertBlockedByAccepted).toBe(true);
+      expect(messageRow(rows, "user-2")?.revertBlockedByAccepted).toBe(false);
+    });
+
+    it("ignores a kept mark whose checkpoint no longer exists", () => {
+      const rows = deriveTwoTurnRows({ checkpointReviews: { "checkpoint-gone": "kept" } });
+
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+      expect(messageRow(rows, "user-1")?.revertBlockedByAccepted).toBe(false);
+    });
+
+    it("does not carry a kept mark over to a rebuilt checkpoint that reuses its turn count", () => {
+      const rows = deriveTwoTurnRows({
+        checkpointIdOverrides: { 1: "checkpoint-1-rebuilt" },
+        checkpointReviews: { "turn-1:checkpoint-1": "kept" },
+      });
+
+      expect(messageRow(rows, "assistant-1")?.turnReview).toBeUndefined();
+      expect(messageRow(rows, "user-1")?.revertBlockedByAccepted).toBe(false);
+    });
+
+    it("shows an undone turn and makes the earlier unreviewed turn the pending one", () => {
+      const rows = deriveTwoTurnRows({ checkpointReviews: { "turn-2:checkpoint-2": "undone" } });
+
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("undone");
+      expect(messageRow(rows, "assistant-1")?.turnReview?.status).toBe("pending");
+    });
+
+    it("keeps the pending review visible while a turn runs, so the view can disable Undo", () => {
+      const rows = deriveTwoTurnRows({ isWorking: true });
+
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+    });
+  });
+
   it("folds the first assistant message and settled work before the terminal response", () => {
     const timelineEntries = [
       {

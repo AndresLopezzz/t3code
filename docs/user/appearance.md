@@ -11,6 +11,29 @@ Use **Change appearance** in the command palette to choose System, Light, or Dar
 the theme. **Cmd+Option+Shift+A** on macOS or **Ctrl+Alt+Shift+A** on Windows/Linux cycles through
 those modes. Customize these shortcuts under **Settings → Keybindings**.
 
+To see the desktop through the app, enable **Desktop window glass** in **Settings → Appearance**
+and restart the desktop app. It is off by default. **Window background opacity** adjusts the desktop
+tint immediately, from 0% (transparent) to 100% (opaque). **Glass opacity** separately controls menus,
+dialogs, and the composer. macOS uses vibrancy;
+Windows uses acrylic where supported by the system.
+
+On Linux, transparency needs a compositor. KDE on X11 requests KWin's blur hint using `xprop`
+when installed; enable the **Blur** desktop effect. On KDE Wayland, use a compositor rule or a
+KWin extension that supports forcing blur for T3 Code. GNOME and other compositors need their
+own blur extension or rule. Without compositor blur, the desktop is visible but remains sharp;
+CSS blur only affects content inside the app.
+
+Enable **Projects column** in **Settings → Appearance** to browse projects beside their sessions.
+Select a project to filter the existing grouped session list and search, or choose **All projects**.
+The layout uses two columns at window widths of 1200 CSS pixels or more and one column below that.
+Use the arrow beside **Projects** to collapse the column into icons or expand it again; the app
+remembers that choice and the sessions width. Turn the layout off to return to the previous sidebar,
+including the legacy sidebar if enabled.
+
+**Grid arcade** adds monocode's Pac-Man and Snake to empty conversations. Select **Take control**
+to play with the arrow keys or WASD; **Escape** releases control. The idle grid stays still with
+reduced motion and pauses while hidden. Disable it in **Settings → Appearance**.
+
 On mobile, open **Settings → Appearance**. Mobile has its own themes and text,
 code, and terminal preferences. It does not follow environment themes or defaults.
 

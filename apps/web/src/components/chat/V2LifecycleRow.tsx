@@ -2,10 +2,18 @@ import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ReactNode } from "react";
-import { useThreadShell, useProject } from "../../state/entities";
+import { useThreadCheckpointSummaries, useThreadShell, useProject } from "../../state/entities";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeThreadRef,
+  scopeProjectRef,
+} from "@t3tools/client-runtime/environment";
+import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
+import { selectCompletedChildReview } from "../../state/checkpointChanges";
+import { useUiStateStore } from "../../uiStateStore";
+import { TurnChangeActions } from "./TurnChangeActions";
 import { environmentThreadDetails } from "../../state/threads";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { MiddleTruncate } from "../ui/middle-truncate";
@@ -482,7 +490,7 @@ function SubagentTimelineLink(props: {
   );
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
-  return (
+  const link = (
     <Tooltip>
       <TooltipTrigger
         delay={200}
@@ -520,6 +528,40 @@ function SubagentTimelineLink(props: {
         />
       </ThreadHoverCardPopup>
     </Tooltip>
+  );
+  // Actions sit beside the link, not inside it: a button can't nest in the clickable link.
+  if (threadId === null || liveStatus !== "completed") return link;
+  return (
+    <>
+      {link}
+      <SubagentReviewControl childRef={scopeThreadRef(props.parentRef.environmentId, threadId)} />
+    </>
+  );
+}
+
+function SubagentReviewControl(props: { readonly childRef: ScopedThreadRef }) {
+  const summaries = useThreadCheckpointSummaries(props.childRef);
+  const reviews = useUiStateStore(
+    (store) => store.threadCheckpointReviewById[scopedThreadKey(props.childRef)],
+  );
+  const child = useThreadShell(props.childRef);
+  const target = selectCompletedChildReview(summaries, reviews);
+  if (target === null) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-2 pb-1.5">
+      <span className="text-2xs text-muted-foreground">
+        {target.checkpoint.files.length} files changed
+      </span>
+      {child?.worktreePath ? (
+        <span className="text-2xs text-muted-foreground">In separate worktree</span>
+      ) : null}
+      <TurnChangeActions
+        threadRef={props.childRef}
+        checkpoint={target.checkpoint}
+        status={target.status}
+        disabled={threadRuntimeIsActive(child?.runtime)}
+      />
+    </div>
   );
 }
 

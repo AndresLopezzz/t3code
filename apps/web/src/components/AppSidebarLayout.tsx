@@ -10,7 +10,11 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
-import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  useLocalStorage,
+} from "../hooks/useLocalStorage";
 import {
   isRichTextBoldShortcut,
   resolveShortcutCommand,
@@ -24,13 +28,18 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentIdentificationMode,
+  useLegacySidebarEnabled,
+} from "../hooks/useSettings";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import { AppStatusBar } from "./AppStatusBar";
+import { MobileHostStatus } from "./MobileHostStatus";
 import LegacyThreadSidebar from "./LegacySidebar";
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
@@ -40,6 +49,9 @@ import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
+  PROJECT_SESSION_SIDEBAR_WIDTH_STORAGE_KEY,
+  PROJECT_COLUMN_COLLAPSED_STORAGE_KEY,
+  projectColumnWidth,
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -257,6 +269,17 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
+  const projectColumnEnabled = useClientSettings((s) => s.projectColumnEnabled);
+  const [projectColumnCollapsed, setProjectColumnCollapsed] = useLocalStorage(
+    PROJECT_COLUMN_COLLAPSED_STORAGE_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const [projectSessionWidth, setProjectSessionWidth] = useLocalStorage(
+    PROJECT_SESSION_SIDEBAR_WIDTH_STORAGE_KEY,
+    256,
+    Schema.Finite,
+  );
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   useThreadVisitedMigration();
@@ -271,9 +294,18 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // that would otherwise refresh a render-time snapshot.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
   const [brandWidth, setBrandWidth] = useState(0);
-  const sidebarMinimumWidth = resolveThreadSidebarMinimumWidth(brandWidth);
+  const splitProjects = projectColumnEnabled && !isOnSettings && viewportWidth >= 1200;
+  const projectRailWidth = splitProjects ? projectColumnWidth(projectColumnCollapsed) : 0;
+  const sidebarMinimumWidth = Math.max(
+    resolveThreadSidebarMinimumWidth(brandWidth),
+    splitProjects ? 208 + projectRailWidth : 0,
+  );
   const sidebarMaximumWidth = resolveThreadSidebarMaximumWidth(viewportWidth, sidebarMinimumWidth);
   const resetSidebarWidth = () => {
+    if (splitProjects) {
+      setProjectSessionWidth(256);
+      return;
+    }
     try {
       removeLocalStorageItem(THREAD_SIDEBAR_WIDTH_STORAGE_KEY);
     } catch (error) {
@@ -291,7 +323,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       : {}
   ) as CSSProperties;
   const sidebarProviderStyle = {
-    "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
+    "--sidebar-width": `${clampThreadSidebarWidth(splitProjects ? projectSessionWidth + projectRailWidth : sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
+    "--project-column-width": `${projectRailWidth}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
   } as CSSProperties;
@@ -341,8 +374,14 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
                 nextWidth <= currentWidth ||
                 wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-              storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-              onResize: setSidebarWidth,
+              ...(splitProjects
+                ? {
+                    onResize: (width) => setProjectSessionWidth(width - projectRailWidth),
+                  }
+                : {
+                    storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+                    onResize: setSidebarWidth,
+                  }),
             }}
           >
             {isOnSettings ? (
@@ -353,7 +392,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             ) : legacySidebarEnabled ? (
               <LegacyThreadSidebar />
             ) : (
-              <ThreadSidebar />
+              <ThreadSidebar
+                projectColumn={splitProjects}
+                projectColumnCollapsed={projectColumnCollapsed}
+                onToggleProjectColumn={() => setProjectColumnCollapsed((collapsed) => !collapsed)}
+              />
             )}
             <SidebarRail onDoubleClick={resetSidebarWidth} />
           </Sidebar>
@@ -362,6 +405,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <NavigationHistoryShortcuts />
           <MainAppLocationTracker />
         </SidebarProvider>
+        <MobileHostStatus />
         <AppStatusBar />
       </div>
     </PanelAnimationSuppressionProvider>

@@ -42,6 +42,7 @@ import {
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
+  OrchestrationUndoChangesInput,
 } from "./checkpointDiff.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
@@ -3059,6 +3060,7 @@ export type OrchestrationV2ServerCommand = OrchestrationV2Command | Orchestratio
 export const ORCHESTRATION_V2_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getTurnDiff: "orchestration.getTurnDiff",
+  undoChanges: "orchestration.undoChanges",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   searchThread: "orchestration.searchThread",
@@ -3535,6 +3537,7 @@ export class OrchestrationV2SearchThreadError extends Schema.TaggedError<Orchest
 }
 
 export const OrchestrationV2RpcSchemas = {
+  undoChanges: { input: OrchestrationUndoChangesInput, output: Schema.Void },
   searchThread: {
     input: OrchestrationV2SearchThreadInput,
     output: OrchestrationV2SearchThreadResult,

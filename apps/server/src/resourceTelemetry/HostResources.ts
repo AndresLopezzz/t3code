@@ -77,6 +77,7 @@ const make = Effect.fn("makeHostResources")(function* () {
       cpuCount: cpu.count,
       availableMemoryBytes: Math.min(totalMemoryBytes, Math.max(0, availableMemoryBytes)),
       totalMemoryBytes,
+      ...(platform === "linux" ? yield* readLinuxHostHealth() : {}),
     };
   });
 
@@ -89,3 +90,85 @@ const make = Effect.fn("makeHostResources")(function* () {
 });
 
 export const layer = Layer.effect(HostResources, make());
+
+/** Sysfs values describe the server's host, never the device opening T3. */
+export const readLinuxHostHealth = Effect.fn("HostResources.readLinuxHostHealth")(function* (
+  sysRoot = "/sys",
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const read = (path: string) =>
+    fs.readFileString(path).pipe(
+      Effect.map((value) => value.trim()),
+      Effect.orElseSucceed(() => ""),
+    );
+  const directories = (path: string) => fs.readDirectory(path).pipe(Effect.orElseSucceed(() => []));
+  const powerRoot = `${sysRoot}/class/power_supply`;
+  const batteries = yield* directories(powerRoot).pipe(
+    Effect.flatMap((names) =>
+      Effect.forEach(
+        names.toSorted(),
+        (name) =>
+          Effect.gen(function* () {
+            const directory = `${powerRoot}/${name}`;
+            if ((yield* read(`${directory}/type`)) !== "Battery") return null;
+            if ((yield* read(`${directory}/present`)) === "0") return null;
+            const capacity = yield* read(`${directory}/capacity`);
+            const percent = capacity === "" ? NaN : Number(capacity);
+            const status = (yield* read(`${directory}/status`)).toLowerCase();
+            const state: NonNullable<HostResourcesSnapshot["batteryState"]> =
+              status === "charging" || status === "discharging" || status === "full"
+                ? status
+                : "unknown";
+            return {
+              batteryPercent:
+                Number.isFinite(percent) && percent >= 0 && percent <= 100 ? percent : null,
+              batteryState: state,
+            };
+          }),
+        { concurrency: 4 },
+      ),
+    ),
+  );
+  const hwmonRoot = `${sysRoot}/class/hwmon`;
+  const sensors = yield* directories(hwmonRoot).pipe(
+    Effect.flatMap((names) =>
+      Effect.forEach(
+        names,
+        (name) =>
+          Effect.gen(function* () {
+            const directory = `${hwmonRoot}/${name}`;
+            const chip = yield* read(`${directory}/name`);
+            if (!["coretemp", "k10temp", "zenpower", "cpu_thermal"].includes(chip)) return [];
+            const files = yield* directories(directory);
+            const readings = yield* Effect.forEach(
+              files.filter((file) => /^temp\d+_input$/.test(file)),
+              (file) =>
+                Effect.gen(function* () {
+                  const raw = yield* read(`${directory}/${file}`);
+                  const value = raw === "" ? NaN : Number(raw) / 1000;
+                  const label = yield* read(`${directory}/${file.replace("_input", "_label")}`);
+                  return { value, package: /^(Package id \d+|Tdie|Tctl)$/.test(label) };
+                }),
+              { concurrency: 4 },
+            );
+            const valid = readings.filter(
+              ({ value }) => Number.isFinite(value) && value > 0 && value <= 150,
+            );
+            const packages = valid.filter((reading) => reading.package);
+            return (packages.length ? packages : valid).map((reading) => reading.value);
+          }),
+        { concurrency: 4 },
+      ),
+    ),
+  );
+  const temperatures = sensors.flat();
+  const battery = batteries.find((entry) => entry !== null);
+  return {
+    batteryPercent: battery?.batteryPercent ?? null,
+    batteryState: battery?.batteryState ?? "unknown",
+    cpuTemperatureCelsius: temperatures.length ? Math.max(...temperatures) : null,
+  } satisfies Pick<
+    HostResourcesSnapshot,
+    "batteryPercent" | "batteryState" | "cpuTemperatureCelsius"
+  >;
+});

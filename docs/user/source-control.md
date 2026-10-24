@@ -8,7 +8,16 @@ and publish repositories, create pull requests, and review changes.
 A turn's changed files and diff show only the turn's own work. When a turn pulls, merges, or
 rebases, the files Git brought in are left out. A file stays in the list when the turn edited it,
 committed it, or fixed a conflict in it. Use the branch comparison to review everything that changed
-against your base branch. Restore still returns the complete saved workspace.
+against your base branch.
+
+**Undo** on a completed turn reverses that turn's file changes while keeping the conversation.
+It preserves other files and your staging area, and stops if the affected files have newer edits
+or overlapping work cannot be separated safely. It needs a start snapshot recorded by this build;
+older turns cannot use safe file undo. Full checkpoint restore still requires an isolated worktree.
+Review the listed files before confirming: manual edits made while the turn ran may be in its snapshot.
+For a delegated task, review its changes on its task card; changes in a separate worktree stay there.
+**Keep** and **Reopen** save review decisions in this browser. Only changes inside the thread's
+assigned workspace are checkpointed; changing directories in a terminal does not change that workspace.
 
 ## Connect an account
 

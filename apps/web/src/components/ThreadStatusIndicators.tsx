@@ -3,6 +3,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+import { ActivityIndicator } from "./ActivityIndicator";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { useStableCallback } from "~/hooks/useStableCallback";
 
@@ -764,10 +765,7 @@ export function ThreadTerminalStatusButton({
           />
         }
       >
-        <TerminalIcon
-          className="size-3.5 motion-safe:animate-status-pulse"
-          onAnimationStart={synchronizeTerminalPulse}
-        />
+        <ActivityIndicator kind="terminal" />
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>

@@ -220,6 +220,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["colors borders interface"],
   },
   {
+    id: "native-window-glass",
+    title: "Desktop window glass",
+    to: "/settings/appearance",
+    searchTerms: ["transparent transparency blur wallpaper vibrancy acrylic restart linux kde"],
+  },
+  {
+    id: "window-background-opacity",
+    title: "Window background opacity",
+    to: "/settings/appearance",
+    searchTerms: ["desktop glass transparent transparency wallpaper tint"],
+  },
+  {
+    id: "grid-arcade",
+    title: "Grid arcade",
+    to: "/settings/appearance",
+    searchTerms: ["pacman pac-man snake game background empty session animation monocode"],
+  },
+  {
+    id: "projects-column",
+    title: "Projects column",
+    to: "/settings/appearance",
+    searchTerms: ["sidebar layout sessions monocode"],
+  },
+  {
     // Prefixed because the slider control already owns the `glass-opacity` id.
     id: "setting-glass-opacity",
     title: "Glass opacity",

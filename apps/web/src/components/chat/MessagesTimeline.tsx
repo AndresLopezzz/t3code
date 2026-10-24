@@ -233,8 +233,10 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestRun,
+  type TurnReviewState,
   type WorkGroupScrollAnchor,
 } from "./MessagesTimeline.logic";
+import { TurnChangeActions } from "./TurnChangeActions";
 import { type ThreadFindMatch } from "./threadFind";
 import { useThreadFindNavigation } from "./useThreadFindNavigation";
 import { readThreadFindPosition } from "./threadFindPosition";
@@ -242,6 +244,7 @@ import type { ThreadFindPositionReader } from "./threadFind";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
+import { ActivityIndicator } from "../ActivityIndicator";
 import { Tooltip, TooltipPopup, TooltipTrigger, TooltipScrollDismissArea } from "../ui/tooltip";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import {
@@ -280,6 +283,7 @@ import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
+import { selectCompletedChildReview } from "~/state/checkpointChanges";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import {
   formatChatTimestampTooltip,
@@ -843,6 +847,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
       ? new Set(paintedExpandedAttemptIds).add(activeFindAttemptId)
       : paintedExpandedAttemptIds;
 
+  const checkpointReviews = useUiStateStore(
+    (store) => store.threadCheckpointReviewById[routeThreadKey],
+  );
+  const latestReview = selectCompletedChildReview(turnDiffSummaries, checkpointReviews);
+  const unattachedReview =
+    latestReview?.checkpoint.assistantMessageId === null ? latestReview : null;
+  const reviewThreadRef = parseScopedThreadKey(routeThreadKey);
   const rawRows = useIncrementalTimelineRows(`${listIdentityKey}\0${workspaceRoot ?? ""}`, {
     timelineEntries,
     latestRun,
@@ -855,6 +866,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     activeTurnStartedAt,
     turnDiffSummaries,
     supportsConversationRollback,
+    checkpointReviews,
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
@@ -1069,6 +1081,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
   const timelineListFooter = (
     <TimelineListFooter composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}>
+      {unattachedReview && reviewThreadRef ? (
+        <div className="px-1 py-2">
+          <TurnChangeActions
+            threadRef={reviewThreadRef}
+            checkpoint={unattachedReview.checkpoint}
+            status={unattachedReview.status}
+            disabled={isWorking || isRevertingCheckpoint}
+          />
+        </div>
+      ) : null}
       {footer}
     </TimelineListFooter>
   );
@@ -1421,14 +1443,16 @@ const ConversationTimeline = memo(function ConversationTimeline({
     !isWorking &&
     parentThreadLink === null &&
     historyControls === undefined &&
-    footer === null
+    footer === null &&
+    unattachedReview === null
   ) {
     if (hideEmptyPlaceholder) {
       return <div className="h-full min-h-0 bg-background" data-timeline-loading="true" />;
     }
     return (
       <div
-        className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
+        // Clicks pass through to the empty-thread arcade behind it.
+        className="pointer-events-none flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
         style={{ paddingBottom: contentInsetEndAdjustment }}
       >
         <p className="text-sm text-muted-foreground/30">
@@ -2426,7 +2450,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+              <RevertUserMessageButton
+                turnCount={revertTurnCount}
+                messageId={row.message.id}
+                blockedByAccepted={row.revertBlockedByAccepted === true}
+              />
             )}
             {resolvedContext.text && (
               <MessageCopyButton
@@ -2506,12 +2534,15 @@ function resolvePreviewAnnotationImage(input: {
 function RevertUserMessageButton({
   turnCount,
   messageId,
+  blockedByAccepted,
 }: {
   turnCount: number;
   messageId: MessageId;
+  blockedByAccepted: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
+  const label = blockedByAccepted ? "Accepted — can't revert" : "Edit from here";
 
   return (
     <Tooltip>
@@ -2521,15 +2552,15 @@ function RevertUserMessageButton({
             type="button"
             size="xs"
             variant="ghost"
-            disabled={activity.isRevertingCheckpoint || activity.isWorking}
+            disabled={activity.isRevertingCheckpoint || activity.isWorking || blockedByAccepted}
             onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
-            aria-label="Edit from here"
+            aria-label={label}
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Edit from here</TooltipPopup>
+      <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -2647,6 +2678,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           resolvedTheme={ctx.resolvedTheme}
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
+        {row.turnReview ? <TurnReviewActions review={row.turnReview} /> : null}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
             className="mt-1.5"
@@ -2658,6 +2690,23 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+function TurnReviewActions({ review }: { review: TurnReviewState }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const threadRef = parseScopedThreadKey(ctx.routeThreadKey);
+  if (threadRef === null) return null;
+  return (
+    <div className="mt-1.5">
+      <TurnChangeActions
+        threadRef={threadRef}
+        checkpoint={review.checkpoint}
+        status={review.status}
+        disabled={activity.isWorking || activity.isRevertingCheckpoint}
+      />
+    </div>
   );
 }
 
@@ -3558,6 +3607,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+        <ActivityIndicator kind="thinking" />
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"

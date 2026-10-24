@@ -130,6 +130,7 @@ export interface CheckpointServiceV2Shape {
   readonly captureBaseline: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
+    readonly runId?: RunId;
   }) => Effect.Effect<void, CheckpointServiceV2Error>;
   readonly materializeBaselineCheckpoint: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
@@ -170,6 +171,18 @@ export const checkpointRefForScopeOrdinal = Effect.fn("checkpointRefForScopeOrdi
     );
   },
 );
+
+export const checkpointRefForRunStart = (runId: RunId) =>
+  checkpointRefForScopeOrdinal({
+    scopeId: CheckpointScopeId.make(`turn-start:${runId}`),
+    ordinalWithinScope: 0,
+  });
+
+export const checkpointRefForRunEnd = (runId: RunId) =>
+  checkpointRefForScopeOrdinal({
+    scopeId: CheckpointScopeId.make(`turn-end:${runId}`),
+    ordinalWithinScope: 0,
+  });
 
 function checkpointIdForScopeOrdinal(
   idAllocator: IdAllocator.IdAllocatorV2["Service"],
@@ -272,6 +285,23 @@ export const layer: Layer.Layer<
             return;
           }
 
+          if (input.runId !== undefined) {
+            const startRef = yield* checkpointRefForRunStart(input.runId).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
+            if (
+              !(yield* checkpointStore.hasCheckpointRef({
+                cwd: input.scope.cwd,
+                checkpointRef: startRef,
+              }))
+            ) {
+              yield* checkpointStore.captureCheckpoint({
+                cwd: input.scope.cwd,
+                checkpointRef: startRef,
+              });
+            }
+          }
+
           const checkpointRef = yield* checkpointRefFor({
             scopeId: input.scope.id,
             ordinalWithinScope: input.ordinalWithinScope,
@@ -369,11 +399,15 @@ export const layer: Layer.Layer<
                   ordinalWithinScope: input.ordinalWithinScope - 1,
                 })
               : null;
-          const checkpointRef = yield* checkpointRefFor({
-            scopeId: input.scope.id,
-            ordinalWithinScope: input.ordinalWithinScope,
-          });
-          const previousCheckpointRef = yield* checkpointRefFor({
+          const checkpointRef = yield* input.runId === null
+            ? checkpointRefFor({
+                scopeId: input.scope.id,
+                ordinalWithinScope: input.ordinalWithinScope,
+              })
+            : checkpointRefForRunEnd(input.runId).pipe(
+                Effect.provideService(Crypto.Crypto, crypto),
+              );
+          let previousCheckpointRef = yield* checkpointRefFor({
             scopeId: input.scope.id,
             ordinalWithinScope: Math.max(0, input.ordinalWithinScope - 1),
           });
@@ -394,21 +428,26 @@ export const layer: Layer.Layer<
             });
           }
 
-          const captured = yield* checkpointStore
-            .captureCheckpoint({
-              cwd: input.scope.cwd,
-              checkpointRef,
-            })
-            .pipe(
-              Effect.as(true),
-              Effect.catch((cause) =>
-                Effect.logWarning("orchestration V2 checkpoint capture failed", {
-                  scopeId: input.scope.id,
-                  checkpointRef,
-                  cause: String(cause),
-                }).pipe(Effect.as(false)),
-              ),
-            );
+          const alreadyCaptured =
+            input.runId !== null &&
+            (yield* checkpointStore.hasCheckpointRef({ cwd: input.scope.cwd, checkpointRef }));
+          const captured =
+            alreadyCaptured ||
+            (yield* checkpointStore
+              .captureCheckpoint({
+                cwd: input.scope.cwd,
+                checkpointRef,
+              })
+              .pipe(
+                Effect.as(true),
+                Effect.catch((cause) =>
+                  Effect.logWarning("orchestration V2 checkpoint capture failed", {
+                    scopeId: input.scope.id,
+                    checkpointRef,
+                    cause: String(cause),
+                  }).pipe(Effect.as(false)),
+                ),
+              ));
 
           if (!captured) {
             return makeCheckpoint({
@@ -426,6 +465,19 @@ export const layer: Layer.Layer<
             });
           }
 
+          if (input.runId !== null) {
+            const startRef = yield* checkpointRefForRunStart(input.runId).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
+            if (
+              yield* checkpointStore.hasCheckpointRef({
+                cwd: input.scope.cwd,
+                checkpointRef: startRef,
+              })
+            ) {
+              previousCheckpointRef = startRef;
+            }
+          }
           const previousExists = yield* checkpointStore
             .hasCheckpointRef({
               cwd: input.scope.cwd,
@@ -465,14 +517,28 @@ export const layer: Layer.Layer<
                 ),
               ]).pipe(
                 Effect.map(([diff, authoredPaths]) =>
-                  parseTurnDiffFilesFromNumstat(diff)
-                    .filter((file) => !isGitImport(file, authoredPaths))
-                    .map((file) => ({
-                      path: file.path,
-                      kind: "modified",
-                      additions: file.additions,
-                      deletions: file.deletions,
-                    })),
+                  parseTurnDiffFilesFromNumstat(diff).flatMap((file) =>
+                    isGitImport(file, authoredPaths)
+                      ? []
+                      : [
+                          {
+                            path: file.path,
+                            kind: "modified",
+                            additions: file.additions,
+                            deletions: file.deletions,
+                          },
+                          ...(file.previousPath === undefined
+                            ? []
+                            : [
+                                {
+                                  path: file.previousPath,
+                                  kind: "deleted",
+                                  additions: 0,
+                                  deletions: file.deletions,
+                                },
+                              ]),
+                        ],
+                  ),
                 ),
                 Effect.catch((cause) =>
                   Effect.logWarning("orchestration V2 checkpoint diff summary failed", {

@@ -150,6 +150,8 @@ import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import {
   Fragment,
+  lazy,
+  Suspense,
   type SetStateAction,
   useEffect,
   useEffectEvent,
@@ -414,6 +416,7 @@ import { MessagesTimeline, type MessagesTimelineHistoryControls } from "./chat/M
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
+import { resolveKeptTurnCount } from "../state/checkpointChanges";
 import {
   overlayComposerIsResting,
   resolveComposerTimelineInset,
@@ -2864,6 +2867,7 @@ export default function ChatView(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
+  const gridArcadeEnabled = useClientSettings((settings) => settings.gridArcadeEnabled);
   const isDraftHeroState = resolveDraftHeroState({
     isLocalDraftThread,
     hasTimelineEntries: timelineEntries.length > 0,
@@ -5726,6 +5730,16 @@ export default function ChatView(props: ChatViewProps) {
       : undefined;
     if (!message || message.role !== "user") return;
 
+    // Reverting to `turnCount` drops every turn after it, so a kept turn blocks any target before it.
+    const acceptedTurnCount = resolveKeptTurnCount(
+      turnDiffSummaries,
+      useUiStateStore.getState().threadCheckpointReviewById[routeThreadKey],
+    );
+    if (acceptedTurnCount !== null && turnCount < acceptedTurnCount) {
+      setThreadError(activeThread.id, "This turn is kept. Reopen it before reverting.");
+      return;
+    }
+
     if (!supportsConversationRollback) {
       setThreadError(
         activeThread.id,
@@ -5804,6 +5818,21 @@ export default function ChatView(props: ChatViewProps) {
     if (phase === "running" || isSendBusy || isConnecting) {
       setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
       return;
+    }
+    // Same rule as onRevertToTurnCount. A checkpoint that isn't a turn checkpoint can't be
+    // placed against the kept turn, so it is refused while a turn is kept.
+    const acceptedTurnCount = resolveKeptTurnCount(
+      turnDiffSummaries,
+      useUiStateStore.getState().threadCheckpointReviewById[routeThreadKey],
+    );
+    if (acceptedTurnCount !== null) {
+      const targetTurn = turnDiffSummaries.find(
+        (summary) => summary.checkpointId === input.checkpointId,
+      );
+      if (targetTurn === undefined || targetTurn.checkpointTurnCount < acceptedTurnCount) {
+        setThreadError(activeThread.id, "This turn is kept. Reopen it before reverting.");
+        return;
+      }
     }
     const localApi = readLocalApi();
     const confirmed =
@@ -7835,6 +7864,7 @@ export default function ChatView(props: ChatViewProps) {
 
   const content = (
     <div
+      data-native-glass-workspace=""
       ref={setWorkspaceLayoutElement}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
     >
@@ -7912,6 +7942,12 @@ export default function ChatView(props: ChatViewProps) {
             onDrop={workspaceFileDropHandlers.onDrop}
           >
             <ThreadFind onClose={focusComposerStable} />
+            {(isDraftHeroState || (timelineEntries.length === 0 && !isWorking)) &&
+            gridArcadeEnabled ? (
+              <Suspense fallback={null}>
+                <EmptySessionArcade />
+              </Suspense>
+            ) : null}
             {isWorkspaceFileDragActive ? (
               <div
                 className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
@@ -7946,7 +7982,10 @@ export default function ChatView(props: ChatViewProps) {
                 }}
               />
             </div>
-            <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+            <div
+              data-native-glass-timeline=""
+              className="relative flex min-h-0 flex-1 flex-col bg-background"
+            >
               <MessagesTimeline
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
                 citationHistoryLoading={threadDetailLoading}
@@ -8649,6 +8688,12 @@ export default function ChatView(props: ChatViewProps) {
     </FileMetadataThreadProvider>
   );
 }
+
+const EmptySessionArcade = lazy(() =>
+  import("./chat/arcade/TerminalGridBackground").then((module) => ({
+    default: module.TerminalGridBackground,
+  })),
+);
 
 function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
   usePreviewSession(props.threadRef);

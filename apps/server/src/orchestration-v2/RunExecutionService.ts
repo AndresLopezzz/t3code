@@ -864,6 +864,7 @@ export const layer: Layer.Layer<
               .captureBaseline({
                 scope: input.checkpointScope,
                 ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
+                runId: input.run.id,
               })
               .pipe(
                 Effect.catchCause((cause) =>

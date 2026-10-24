@@ -72,6 +72,14 @@ import {
   formatSearchToolLabel,
 } from "@t3tools/shared/toolActivity";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+import {
+  type CheckpointReviewState,
+  type CheckpointReviews,
+  deriveCheckpointReviewStates,
+  isReviewableCheckpoint,
+  resolveKeptTurnCount,
+  type ReviewableCheckpoint,
+} from "../../state/checkpointChanges";
 
 function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   if (entry.kind === "message") {
@@ -570,6 +578,8 @@ type MessagesTimelineRowContent =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      revertBlockedByAccepted?: boolean | undefined;
+      turnReview?: TurnReviewState | undefined;
     }
   | {
       kind: "assistant-meta";
@@ -1317,6 +1327,51 @@ function deriveTimelineTurnFolds(
   });
 }
 
+export interface TurnReviewState {
+  readonly status: CheckpointReviewState;
+  readonly checkpoint: ReviewableCheckpoint;
+}
+
+function deriveTurnReviewByAssistantMessageId(input: {
+  turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  checkpointReviews: CheckpointReviews | undefined;
+}): Map<MessageId, TurnReviewState> {
+  const states = deriveCheckpointReviewStates(input.turnDiffSummaries, input.checkpointReviews);
+  const reviewByAssistantMessageId = new Map<MessageId, TurnReviewState>();
+  for (const summary of input.turnDiffSummaries) {
+    if (!isReviewableCheckpoint(summary) || summary.assistantMessageId === null) continue;
+    const status = states.get(summary.checkpointId);
+    if (status !== undefined) {
+      reviewByAssistantMessageId.set(summary.assistantMessageId, { status, checkpoint: summary });
+    }
+  }
+  return reviewByAssistantMessageId;
+}
+
+/** Compares by checkpoint id, so a rebuilt checkpoint that reuses an ordinal is a different review. */
+function sameTurnReview(a: TurnReviewState | undefined, b: TurnReviewState | undefined): boolean {
+  return (
+    a === b ||
+    (a !== undefined &&
+      b !== undefined &&
+      a.status === b.status &&
+      a.checkpoint.checkpointId === b.checkpoint.checkpointId &&
+      a.checkpoint.runId === b.checkpoint.runId &&
+      a.checkpoint.checkpointTurnCount === b.checkpoint.checkpointTurnCount)
+  );
+}
+
+function revertBlockedByAcceptedTurn(
+  revertTurnCount: number | undefined,
+  acceptedTurnCount: number | null,
+): boolean {
+  return (
+    revertTurnCount !== undefined &&
+    acceptedTurnCount !== null &&
+    revertTurnCount < acceptedTurnCount
+  );
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun?: TimelineLatestRun | null;
@@ -1333,6 +1388,7 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
+  checkpointReviews?: CheckpointReviews | undefined;
   liveAgentTaskIds?: ReadonlySet<string> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
@@ -1349,6 +1405,11 @@ export function deriveMessagesTimelineRows(input: {
         checkpoints: input.turnDiffSummaries,
       })
     : new Map<MessageId, number>();
+  const keptTurnCount = resolveKeptTurnCount(input.turnDiffSummaries, input.checkpointReviews);
+  const turnReviewByAssistantMessageId = deriveTurnReviewByAssistantMessageId({
+    turnDiffSummaries: input.turnDiffSummaries,
+    checkpointReviews: input.checkpointReviews,
+  });
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
     timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
@@ -1822,6 +1883,11 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "user"
           ? revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
+      revertBlockedByAccepted: revertBlockedByAcceptedTurn(
+        revertTurnCountByUserMessageId.get(timelineEntry.message.id),
+        keptTurnCount,
+      ),
+      turnReview: turnReviewByAssistantMessageId.get(timelineEntry.message.id),
     });
   }
 
@@ -2246,7 +2312,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
-        a.revertTurnCount === bm.revertTurnCount
+        a.revertTurnCount === bm.revertTurnCount &&
+        a.revertBlockedByAccepted === bm.revertBlockedByAccepted &&
+        sameTurnReview(a.turnReview, bm.turnReview)
       );
     }
   }

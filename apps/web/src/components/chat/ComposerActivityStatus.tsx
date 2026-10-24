@@ -1,4 +1,4 @@
-import { Spinner } from "~/components/ui/spinner";
+import { ActivityIndicator } from "../ActivityIndicator";
 
 import { threadSyncLabel, type ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
@@ -7,7 +7,7 @@ export function ComposerActivityRow({ phase }: { readonly phase: ThreadSyncPhase
   return (
     <ComposerBanner.Row>
       <ComposerBanner.Icon>
-        <Spinner />
+        <ActivityIndicator kind="thinking" />
       </ComposerBanner.Icon>
       <ComposerBanner.Content>
         <span

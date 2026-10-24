@@ -2,7 +2,24 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Struct from "effect/Struct";
 
-import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  CheckpointId,
+  NonNegativeInt,
+  RunId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+
+export const OrchestrationUndoChangesInput = Schema.Struct({
+  threadId: ThreadId,
+  checkpointId: CheckpointId,
+  runId: RunId,
+});
+export type OrchestrationUndoChangesInput = typeof OrchestrationUndoChangesInput.Type;
+export class OrchestrationUndoChangesError extends Schema.TaggedError<OrchestrationUndoChangesError>()(
+  "OrchestrationUndoChangesError",
+  { message: TrimmedNonEmptyString, cause: Schema.optional(Schema.Defect()) },
+) {}
 
 export const TurnCountRange = Schema.Struct({
   fromTurnCount: NonNegativeInt,

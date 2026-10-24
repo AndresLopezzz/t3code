@@ -1,3 +1,4 @@
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthOrchestrationOperateScope,
   CommandId,
@@ -107,7 +108,7 @@ function TerminalSessionsDialog({ onOpened }: { readonly onOpened: () => void })
     const { environmentId, candidate } = folder;
     setPending(session.providerSessionId);
     setError(null);
-    try {
+    const opened = await settlePromise(async () => {
       if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
         throw new Error("This computer does not allow opening sessions.");
       const key = `${environmentId}:${candidate.path}`;
@@ -151,11 +152,12 @@ function TerminalSessionsDialog({ onOpened }: { readonly onOpened: () => void })
         },
       });
       onOpened();
-    } catch (cause) {
+    });
+    if (opened._tag === "Failure") {
+      const cause = squashAtomCommandFailure(opened);
       setError(cause instanceof Error ? cause.message : "Could not open this session.");
-    } finally {
-      setPending(null);
     }
+    setPending(null);
   }
 
   return (
