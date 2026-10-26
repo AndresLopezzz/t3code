@@ -1,8 +1,4 @@
-import {
-  findAndReplaceText,
-  type MarkdownNode,
-  type TextMatch,
-} from "~/vendor/mdast-find-and-replace";
+import type { Root, RootContent, PhrasingContent } from "mdast";
 
 const JIRA_SITE_URL = "https://naowee.atlassian.net";
 const JIRA_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-[1-9]\d{0,5}\b/gu;
@@ -38,19 +34,42 @@ export function findJiraIssueKey(...sources: ReadonlyArray<string | null | undef
 
 /** Turns issue keys in chat prose into links; code and authored links are left alone. */
 export function remarkJiraAutolinks() {
-  return (tree: MarkdownNode) => {
-    findAndReplaceText(
-      tree,
-      JIRA_KEY_PATTERN,
-      (matched: string, _match: TextMatch) =>
-        isJiraKey(matched)
-          ? {
+  return (tree: Root) => {
+    const visit = (node: Root | RootContent): void => {
+      if (
+        node.type === "paragraph" ||
+        node.type === "heading" ||
+        node.type === "emphasis" ||
+        node.type === "strong" ||
+        node.type === "delete" ||
+        node.type === "tableCell"
+      ) {
+        node.children = node.children.flatMap((child): PhrasingContent[] => {
+          if (child.type !== "text") {
+            visit(child);
+            return [child];
+          }
+          const parts: PhrasingContent[] = [];
+          let offset = 0;
+          for (const match of child.value.matchAll(JIRA_KEY_PATTERN)) {
+            if (!isJiraKey(match[0])) continue;
+            if (match.index > offset)
+              parts.push({ type: "text", value: child.value.slice(offset, match.index) });
+            parts.push({
               type: "link",
-              url: jiraIssueUrl(matched),
-              children: [{ type: "text", value: matched }],
-            }
-          : false,
-      IGNORED_TYPES,
-    );
+              url: jiraIssueUrl(match[0]),
+              children: [{ type: "text", value: match[0] }],
+            });
+            offset = match.index + match[0].length;
+          }
+          if (offset < child.value.length)
+            parts.push({ type: "text", value: child.value.slice(offset) });
+          return parts;
+        });
+      } else if (!IGNORED_TYPES.has(node.type) && "children" in node) {
+        node.children.forEach(visit);
+      }
+    };
+    visit(tree);
   };
 }

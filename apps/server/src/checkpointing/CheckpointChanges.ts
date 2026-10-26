@@ -215,7 +215,7 @@ const make = Effect.gen(function* () {
     );
   });
   return CheckpointChanges.of({
-    undo: (input) =>
+    undo: Effect.fn("CheckpointChanges.undo")((input) =>
       undo(input).pipe(
         withFileUndo,
         Effect.scoped,
@@ -229,6 +229,7 @@ const make = Effect.gen(function* () {
               }),
         ),
       ),
+    ),
   });
 });
 

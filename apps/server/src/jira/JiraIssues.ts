@@ -176,7 +176,7 @@ const moveIssue = Effect.fn("moveJiraIssue")(function* (
     .map((transition) => record(transition))
     .find((transition) => name(transition?.to)?.toLowerCase() === target)?.id;
   if (typeof id !== "string") {
-    return yield* Effect.fail(fail(`Jira offers no way to move it to ${toStatus}`));
+    return yield* fail(`Jira offers no way to move it to ${toStatus}`);
   }
   yield* transitionIssue(secretsDir, key, id);
 });

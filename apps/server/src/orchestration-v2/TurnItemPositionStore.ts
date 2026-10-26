@@ -103,7 +103,8 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
 
     return TurnItemPositionStoreV2.of({
       allocate,
-      normalize: (item, runOrdinal) => {
+      // Per-event normalization shares the enclosing orchestration span.
+      normalize: Effect.fnUntraced(function* (item, runOrdinal) {
         // Explicitly opened terminal history can arrive after native T3 runs.
         // Keep that tail in the latest run's ordering range while it remains
         // external history (runId null); the next T3 run gets its own range.
@@ -112,13 +113,13 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           (item.runId === null && item.ordinal >= 1_000_000
             ? Math.floor(item.ordinal / 1_000_000)
             : undefined);
-        return allocate({
+        return yield* allocate({
           threadId: item.threadId,
           turnItemId: item.id,
           runId: item.runId,
           ...(effectiveRunOrdinal === undefined ? {} : { runOrdinal: effectiveRunOrdinal }),
         }).pipe(Effect.map((ordinal) => (item.ordinal === ordinal ? item : { ...item, ordinal })));
-      },
+      }),
     });
   }),
 );
