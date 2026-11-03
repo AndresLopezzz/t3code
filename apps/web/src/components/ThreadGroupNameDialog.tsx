@@ -36,6 +36,7 @@ function finish(name: string | null) {
 
 export function ThreadGroupNameDialogHost() {
   const request = useRequest((state) => state.request);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Settle the outstanding dialog promise when its host unmounts.
   useEffect(() => () => finish(null), []);
   return request ? <ThreadGroupNameDialog request={request} /> : null;
 }

@@ -1,13 +1,5 @@
 // Adapted from monocode, Copyright (c) 2026 Nick, MIT. See LICENSE.monocode.
-/**
- * Pac-man on the terminal grid, chased by four of the project mascots.
- *
- * Everything lives on two grids. The background grid is one cell per square,
- * which is what `stamp` paints the maze and the pellets into. On top of that
- * sits the maze lattice, `tile` cells to a side, which is what pac-man and the
- * mascots actually walk on — `sprites` hands their positions back in fractional
- * cells so the caller can draw them mid-step.
- */
+// Maze movement uses tile coordinates; the canvas stamps sprites onto the finer cell grid.
 import { PROJECT_MASCOTS } from "./projectMascots";
 import { HARNESSES, type HarnessId } from "./arcadeProviders";
 import type { ArcadeMode, ArcadeSprite, GridArcade, LogoPickup, SpeechBubble } from "./gridArcade";

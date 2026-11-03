@@ -1,7 +1,7 @@
 import { BatteryChargingIcon, BatteryIcon, ThermometerIcon } from "lucide-react";
 import { useEffect } from "react";
 
-import { useIsMobile } from "../hooks/useMediaQuery";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -9,7 +9,7 @@ import { serverEnvironment } from "../state/server";
 
 /** Poll only while the phone browser is visible; recover immediately on return. */
 export function MobileHostStatus() {
-  const mobile = useIsMobile();
+  const mobile = useMediaQuery("max-md");
   const thread = useThreadRouteRef();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentId = thread?.environmentId ?? primaryEnvironmentId;
@@ -17,6 +17,7 @@ export function MobileHostStatus() {
     mobile && environmentId ? serverEnvironment.hostResources({ environmentId, input: {} }) : null,
   );
   const refresh = status.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refresh host telemetry from a visibility listener and polling timer.
   useEffect(() => {
     if (!mobile || !environmentId) return;
     const update = () => {

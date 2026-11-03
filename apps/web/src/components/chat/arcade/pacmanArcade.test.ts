@@ -11,14 +11,7 @@ const FRAME_MS = 33;
 /** Matches the arcade's own logo lifetime. */
 const LOGO_LIFE_MS = 12000;
 
-/**
- * The maze, the logo drops, the mascot pen and the chatter all come off
- * Math.random, so a run is only as repeatable as that stream. Pin it, and the
- * same board plays out everywhere; leave it loose and a thin tail of unlucky
- * boards — pac-man walled off from a logo until it times out — turns the
- * counts below into a coin toss on CI. Override ARCADE_SEED to sweep other
- * boards and check the counts still hold.
- */
+// Pin maze and pickup randomness so unreachable random drops cannot make counts flaky.
 const SEED = Number(process.env.ARCADE_SEED) || 0x5eed;
 
 /** mulberry32: small, fast, and good enough to play a maze with. */

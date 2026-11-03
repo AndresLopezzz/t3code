@@ -5,7 +5,7 @@ export const PROJECT_COLUMN_COLLAPSED_STORAGE_KEY = "chat_project_column_collaps
 export function projectColumnWidth(collapsed: boolean): number {
   return collapsed ? 44 : 200;
 }
-export const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
+const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
 
 export function resolveThreadSidebarMinimumWidth(brandWidth: number): number {

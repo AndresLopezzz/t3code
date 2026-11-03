@@ -3,7 +3,7 @@ import {
   type OrchestrationUndoChangesInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -33,7 +33,7 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const fail = (message: string) => new OrchestrationUndoChangesError({ message });
@@ -77,7 +77,7 @@ const make = Effect.gen(function* () {
       root,
       Effect.gen(function* () {
         const startRef = yield* checkpointRefForRunStart(run.id).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(Digest.Digest, crypto),
         );
         if (
           !handle.driver.checkpoints ||

@@ -1,6 +1,5 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useContext } from "react";
 import { agentSessionScan } from "../state/agentSessions";
@@ -21,7 +20,7 @@ export function useProjectScans(environmentIds: readonly EnvironmentId[], worksp
     const result = results[index]!;
     return {
       environmentId,
-      data: Option.getOrNull(AsyncResult.value(result)),
+      data: AsyncResult.getOrElse(result, () => null),
       error: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : null,
       isPending: result.waiting || result._tag === "Initial",
       refresh: () => registry.refresh(scanAtom(environmentId, workspaceRoot)),

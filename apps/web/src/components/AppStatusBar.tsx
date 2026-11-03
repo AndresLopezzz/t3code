@@ -157,6 +157,7 @@ function VpnSection() {
     return null;
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Read the external WireGuard state and cancel its callback on unmount.
   useEffect(() => {
     if (environmentId === null) return;
     let cancelled = false;

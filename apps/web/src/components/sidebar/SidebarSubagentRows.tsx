@@ -29,6 +29,7 @@ export const SidebarSubagentRows = memo(function SidebarSubagentRows(props: {
 
   // Announce each subagent that stops working while this row watches it.
   const runningIds = useRef<ReadonlySet<string> | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Publish native completion toasts and notification sounds while mounted.
   useEffect(() => {
     if (allSubagents === undefined) return;
     const previous = runningIds.current;

@@ -1,12 +1,5 @@
 // Adapted from monocode, Copyright (c) 2026 Nick, MIT. See LICENSE.monocode.
-/**
- * 8×8 pixel mascots used in place of a project's color dot.
- * '#' paints the project color, '.' stays transparent so the surface shows
- * through — eyes and gaps are holes, like the arcade sprites they borrow from.
- *
- * Each mascot has two frames: `rest`, and `talk` swapped in on a loop while the
- * project has a turn in flight — mouths chew, legs shuffle, flames flicker.
- */
+// Transparent cells reveal the project color; rest and talk frames share an 8×8 grid.
 const GRID = 8;
 
 type MascotRows = readonly string[];
@@ -227,7 +220,7 @@ const TALK: Record<string, MascotRows> = {
 };
 
 /** Merges each row's filled runs into one rect so the path stays short. */
-export function mascotPath(rows: MascotRows): string {
+function mascotPath(rows: MascotRows): string {
   let path = "";
   rows.forEach((row, y) => {
     let x = 0;

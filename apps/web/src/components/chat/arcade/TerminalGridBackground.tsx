@@ -149,6 +149,7 @@ export function TerminalGridBackground() {
   });
   const [hovered, setHovered] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Synchronize the imperative canvas game loop with the selected game.
   useLayoutEffect(() => {
     indexRef.current = slide.index;
     playingRef.current = playing;
@@ -157,6 +158,7 @@ export function TerminalGridBackground() {
 
   const game = GRID_GAMES[slide.index] ?? GRID_GAMES[0]!;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the canvas animation loop, resize observer and image resources.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -464,6 +466,7 @@ export function TerminalGridBackground() {
     });
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the idle carousel timer while the canvas is visible.
   useEffect(() => {
     if (playing || hovered || reducedMotion || GRID_GAMES.length < 2) return;
 
@@ -481,6 +484,7 @@ export function TerminalGridBackground() {
   }, [playing, hovered, reducedMotion, slide.index]);
 
   const releaseFromKeyboard = useEffectEvent(() => releaseControl());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own native keyboard and wheel listeners while the game has focus.
   useEffect(() => {
     if (!playing) return;
 
