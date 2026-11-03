@@ -2617,6 +2617,10 @@ html[data-native-window-glass="true"] :is([data-slot="sidebar-inner"], [data-app
   backdrop-filter: blur(var(--glass-blur));
 }
 
+html[data-native-window-glass="true"] :is([data-slot="sidebar-container"], .project-column) {
+  border-inline-width: 0;
+}
+
 html[data-native-window-glass="true"] [data-slot="sidebar-inset"] {
   background-color: color-mix(in srgb, var(--background) var(--native-glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur));
