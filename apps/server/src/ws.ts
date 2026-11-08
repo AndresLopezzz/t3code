@@ -3145,19 +3145,39 @@ export const layerWsRpc = (
           });
         }),
         [WS_METHODS.vpnSet]: Effect.fn("ws.vpnSet")(function* (input) {
-          const connected = fileSystem
-            .exists("/sys/class/net/naowee")
-            .pipe(Effect.orElseSucceed(() => false));
+          const isMac = process.platform === "darwin";
+          // On macOS wireguard-go serves a utunN.sock while the tunnel is up; naowee.name
+          // outlives it after sleep (and is root-only), so only the socket counts.
+          const connected = (
+            isMac
+              ? fileSystem
+                  .readDirectory("/var/run/wireguard")
+                  .pipe(Effect.map((names) => names.some((name) => name.endsWith(".sock"))))
+              : fileSystem.exists("/sys/class/net/naowee")
+          ).pipe(Effect.orElseSucceed(() => false));
           if (input.up === undefined || input.up === (yield* connected)) {
             return { connected: yield* connected };
           }
-          // pkexec asks for the password through the desktop polkit dialog.
+          const action = input.up ? "up" : "down";
+          // pkexec (Linux) and osascript (macOS) ask for the password through a desktop dialog.
+          // Homebrew's wg-quick needs its own bash 4+ and wg on PATH.
           const result = yield* processRunner
-            .run({
-              command: "pkexec",
-              args: ["wg-quick", input.up ? "up" : "down", "naowee"],
-              timeout: "2 minutes",
-            })
+            .run(
+              isMac
+                ? {
+                    command: "osascript",
+                    args: [
+                      "-e",
+                      `do shell script "PATH=/opt/homebrew/bin:$PATH wg-quick ${action} naowee" with administrator privileges`,
+                    ],
+                    timeout: "2 minutes",
+                  }
+                : {
+                    command: "pkexec",
+                    args: ["wg-quick", action, "naowee"],
+                    timeout: "2 minutes",
+                  },
+            )
             .pipe(Effect.mapError((cause) => new VpnSetError({ reason: cause.message })));
           if (result.code !== 0) {
             return yield* new VpnSetError({
