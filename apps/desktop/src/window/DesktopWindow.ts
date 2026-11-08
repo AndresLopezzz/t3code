@@ -1,3 +1,4 @@
+import * as Config from "effect/Config";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -35,6 +36,9 @@ import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts"
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
+import { windowGlassOptions, requestKwinBlur } from "./WindowGlass.ts";
+
+const glassWindows = new WeakSet<Electron.BrowserWindow>();
 const TITLEBAR_HEIGHT = 40;
 // Matches --workspace-topbar-height in apps/web/src/index.css. Native macOS
 // buttons are 14 points tall and do not scale with the renderer's zoom.
@@ -259,7 +263,9 @@ function syncWindowAppearance(
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
+    window.setBackgroundColor(
+      glassWindows.has(window) ? "#00000000" : getInitialWindowBackgroundColor(shouldUseDarkColors),
+    );
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
@@ -376,6 +382,11 @@ export const make = Effect.gen(function* () {
     if (persistedBounds !== null && initialBounds === DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE) {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
+    const windowClientSettings = yield* clientSettings.get.pipe(
+      Effect.orElseSucceed(() => Option.none()),
+    );
+    const glassEnabled =
+      Option.isSome(windowClientSettings) && windowClientSettings.value.nativeWindowGlassEnabled;
     const window = yield* electronWindow.create({
       ...initialBounds,
       minWidth: 840,
@@ -387,8 +398,10 @@ export const make = Effect.gen(function* () {
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
+      ...windowGlassOptions(glassEnabled, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
+        additionalArguments: glassEnabled ? ["--t3-native-window-glass"] : [],
         // Chromium throttles hidden renderers: timers coalesce and rAF stops,
         // which stalls first paint. Boot unthrottled; the first-reveal trigger
         // re-enables throttling so a hidden or minimized window goes back to
@@ -405,6 +418,33 @@ export const make = Effect.gen(function* () {
       },
     });
 
+    if (glassEnabled) {
+      glassWindows.add(window);
+      if (environment.platform === "linux") {
+        const desktop = yield* Config.String("XDG_CURRENT_DESKTOP").pipe(
+          Config.withDefault(""),
+          Effect.orElseSucceed(() => ""),
+        );
+        const sessionType = yield* Config.String("XDG_SESSION_TYPE").pipe(
+          Config.withDefault(""),
+          Effect.orElseSucceed(() => ""),
+        );
+        if (desktop.toLowerCase().includes("kde") && sessionType === "x11") {
+          yield* Effect.tryPromise(() => requestKwinBlur(window.getNativeWindowHandle())).pipe(
+            Effect.catch((cause) =>
+              logWindowWarning("KWin blur hint unavailable; configure compositor blur manually", {
+                cause,
+              }),
+            ),
+          );
+        } else {
+          yield* logWindowInfo("native glass requires compositor blur on Linux", {
+            desktop,
+            sessionType,
+          });
+        }
+      }
+    }
     yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);

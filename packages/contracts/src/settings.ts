@@ -99,6 +99,9 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+export const WindowBackgroundOpacity = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 100 }),
+);
 
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
@@ -388,6 +391,12 @@ export const ClientSettingsSchema = Schema.Struct({
   environmentIdentificationMode: EnvironmentIdentificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE)),
   ),
+  windowBackgroundOpacity: WindowBackgroundOpacity.pipe(
+    Schema.withDecodingDefault(Effect.succeed(80)),
+  ),
+  nativeWindowGlassEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  gridArcadeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  projectColumnEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
@@ -1576,6 +1585,10 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
+  windowBackgroundOpacity: Schema.optionalKey(WindowBackgroundOpacity),
+  nativeWindowGlassEnabled: Schema.optionalKey(Schema.Boolean),
+  gridArcadeEnabled: Schema.optionalKey(Schema.Boolean),
+  projectColumnEnabled: Schema.optionalKey(Schema.Boolean),
   glassOpacity: Schema.optionalKey(GlassOpacity),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),

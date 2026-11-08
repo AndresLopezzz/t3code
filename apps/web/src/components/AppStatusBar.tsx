@@ -1,5 +1,4 @@
-import type { DiscoveredLocalServer, ServerProvider } from "@t3tools/contracts";
-import { formatResetsIn, providersWithLimits, remainingPercent } from "@t3tools/shared/usageLimits";
+import type { DiscoveredLocalServer } from "@t3tools/contracts";
 import {
   ExternalLinkIcon,
   RadioTowerIcon,
@@ -11,152 +10,19 @@ import { memo, useEffect, useState } from "react";
 
 import { ensureLocalApi } from "../localApi";
 import { useDiscoveredPortsState } from "../portDiscoveryState";
-import {
-  usePrimaryEnvironment,
-  usePrimaryEnvironmentId,
-  useEnvironmentProviders,
-} from "../state/environments";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { previewEnvironment } from "../state/preview";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useAtomCommand } from "../state/use-atom-command";
-import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
-import { ClaudeAI } from "./Icons";
-import { providerClients } from "./settings/providerDriverMeta";
 import { TerminalSessionsButton } from "./TerminalSessionsButton";
 import { Button } from "./ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { barColor, LimitWindows } from "./usage/UsageLimits";
-
-const EMPTY_PROVIDERS: readonly ServerProvider[] = [];
+import { FooterUsage } from "./usage/FooterUsage";
 
 const STATUS_BAR_TRIGGER_CLASS =
   "flex h-full shrink-0 items-center gap-1.5 px-2 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground";
-
-/** Driver label, plus the instance name when it adds something (a second account). */
-function providerLabel(provider: ServerProvider): string {
-  const driver = providerClients.get(provider.driver)?.label ?? String(provider.driver);
-  const instance = provider.displayName?.trim();
-  return instance && instance.toLowerCase() !== driver.toLowerCase()
-    ? `${driver} · ${instance}`
-    : driver;
-}
-
-/** The default Claude home is the personal account; yellow tells it from the work one. */
-function isPersonalClaude(provider: ServerProvider): boolean {
-  return String(provider.instanceId) === "claudeAgent";
-}
-
-function accountColor(provider: ServerProvider): string {
-  return isPersonalClaude(provider) ? "var(--warning)" : barColor(provider.driver);
-}
-
-function MiniBar({ percent, color }: { readonly percent: number; readonly color: string }) {
-  return (
-    <span className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-muted">
-      <span
-        className="block h-full rounded-full"
-        style={{ width: `${Math.min(100, Math.max(0, percent))}%`, backgroundColor: color }}
-      />
-    </span>
-  );
-}
-
-/** One provider at a glance: quota left and countdown, as the usage panel reads it. */
-function ProviderSummary({
-  provider,
-  now,
-}: {
-  readonly provider: ServerProvider;
-  readonly now: number;
-}) {
-  const color = accountColor(provider);
-  const windows = provider.usageLimits?.windows ?? [];
-  // The 5h window is what runs out first; the rest goes in the tooltip.
-  const session = windows.find((window) => window.kind === "session") ?? windows[0];
-  const others = windows.filter((window) => window !== session);
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<span className="flex items-center gap-1.5 tabular-nums" />}
-        aria-label={providerLabel(provider)}
-      >
-        {isPersonalClaude(provider) ? (
-          <ClaudeAI className="size-3.5 shrink-0 fill-warning" aria-hidden />
-        ) : (
-          <ProviderInstanceIcon
-            driverKind={provider.driver}
-            displayName={providerLabel(provider)}
-            className="size-3.5"
-            iconClassName="size-3.5"
-          />
-        )}
-        {session ? (
-          <>
-            <MiniBar percent={remainingPercent(session)} color={color} />
-            {remainingPercent(session)}% left
-            <span className="text-muted-foreground/70">{formatResetsIn(session, now) ?? ""}</span>
-          </>
-        ) : null}
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        <span className="flex flex-col gap-0.5 tabular-nums">
-          <span className="font-medium">{providerLabel(provider)}</span>
-          {others.map((window) => (
-            <span key={window.id}>
-              {window.label}: {remainingPercent(window)}% left
-              {formatResetsIn(window, now) ? ` · ${formatResetsIn(window, now)}` : ""}
-            </span>
-          ))}
-        </span>
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function UsageSection() {
-  const primaryEnvironment = usePrimaryEnvironment();
-  const environmentProviders = useEnvironmentProviders();
-  const providers = providersWithLimits(
-    (primaryEnvironment ? environmentProviders.get(primaryEnvironment.environmentId) : undefined) ??
-      EMPTY_PROVIDERS,
-  ).filter((provider) => (provider.usageLimits?.windows.length ?? 0) > 0);
-  const [now, setNow] = useState(() => Date.now());
-  if (providers.length === 0) return null;
-
-  return (
-    <Popover onOpenChange={(open) => open && setNow(Date.now())}>
-      <PopoverTrigger
-        render={
-          <button type="button" className={STATUS_BAR_TRIGGER_CLASS} aria-label="Usage limits" />
-        }
-      >
-        <span className="flex items-center gap-4">
-          {providers.map((provider) => (
-            <ProviderSummary key={provider.instanceId} provider={provider} now={now} />
-          ))}
-        </span>
-      </PopoverTrigger>
-      <PopoverPopup side="top" align="start" className="w-80">
-        <div className="flex flex-col gap-3">
-          {providers.map((provider) => (
-            <div key={provider.instanceId} className="flex min-w-0 flex-col gap-1">
-              <span className="truncate text-xs font-medium">{providerLabel(provider)}</span>
-              <LimitWindows
-                compact
-                driver={provider.driver}
-                color={accountColor(provider)}
-                windows={provider.usageLimits?.windows ?? []}
-                now={now}
-              />
-            </div>
-          ))}
-        </div>
-      </PopoverPopup>
-    </Popover>
-  );
-}
 
 function PortRow({
   server,
@@ -332,8 +198,11 @@ function VpnSection() {
 /** App-wide bottom bar: usage on the left, ports and existing sessions on the right. */
 export const AppStatusBar = memo(function AppStatusBar() {
   return (
-    <footer className="hidden h-(--app-status-bar-height) shrink-0 items-stretch border-t border-border bg-sidebar px-2 md:flex">
-      <UsageSection />
+    <footer
+      data-app-status-bar=""
+      className="hidden h-(--app-status-bar-height) shrink-0 items-stretch border-t border-border bg-sidebar px-2 md:flex"
+    >
+      <FooterUsage />
       <span className="flex-1" />
       <VpnSection />
       <PortsSection />

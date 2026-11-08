@@ -1118,6 +1118,7 @@ export interface DesktopBridge {
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent?: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut?: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
+  getNativeWindowGlassEnabled?: () => boolean;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;

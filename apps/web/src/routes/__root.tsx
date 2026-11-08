@@ -294,7 +294,18 @@ function ContrastAppearanceSync() {
 }
 
 function GlassAppearanceSync() {
+  useEffect(() => {
+    document.documentElement.dataset.nativeWindowGlass =
+      window.desktopBridge?.getNativeWindowGlassEnabled?.() ? "true" : "false";
+  }, []);
   const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
+  const windowBackgroundOpacity = useClientSettings((settings) => settings.windowBackgroundOpacity);
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--window-background-opacity",
+      `${windowBackgroundOpacity}%`,
+    );
+  }, [windowBackgroundOpacity]);
 
   useEffect(() => {
     const style = document.documentElement.style;

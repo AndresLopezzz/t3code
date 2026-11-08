@@ -537,6 +537,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast
       ? ["Contrast"]
       : []),
+    ...(settings.windowBackgroundOpacity !== DEFAULT_UNIFIED_SETTINGS.windowBackgroundOpacity
+      ? ["Window background opacity"]
+      : []),
+    ...(settings.nativeWindowGlassEnabled ? ["Desktop window glass"] : []),
+    ...(!settings.gridArcadeEnabled ? ["Grid arcade"] : []),
+    ...(settings.projectColumnEnabled ? ["Projects column"] : []),
     ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
     ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
       ? ["Diff colors"]
@@ -732,6 +738,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
+      windowBackgroundOpacity: DEFAULT_UNIFIED_SETTINGS.windowBackgroundOpacity,
+      nativeWindowGlassEnabled: DEFAULT_UNIFIED_SETTINGS.nativeWindowGlassEnabled,
+      gridArcadeEnabled: DEFAULT_UNIFIED_SETTINGS.gridArcadeEnabled,
+      projectColumnEnabled: DEFAULT_UNIFIED_SETTINGS.projectColumnEnabled,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
@@ -1090,6 +1100,10 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
   } as CSSProperties;
+  const windowBackgroundOpacitySliderStyle = {
+    "--settings-slider-progress": `${settings.windowBackgroundOpacity}%`,
+    "--settings-slider-fill-offset": `${0.5 - settings.windowBackgroundOpacity / 100}rem`,
+  } as CSSProperties;
   const appearanceContrastRatio =
     (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
     (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
@@ -1174,6 +1188,92 @@ export function AppearanceSettingsPanel() {
           }
         />
 
+        <SettingsRow
+          {...searchableSetting("native-window-glass")}
+          description="Let the desktop show through a blurred window. Restart the desktop app to apply. Linux requires compositor blur (KDE X11 is requested automatically)."
+          control={
+            <Switch
+              checked={settings.nativeWindowGlassEnabled}
+              disabled={!isElectron}
+              onCheckedChange={(checked) =>
+                updateSettings({ nativeWindowGlassEnabled: Boolean(checked) })
+              }
+              aria-label="Desktop window glass"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("window-background-opacity")}
+          description="Lower values show more of the desktop. Applies immediately when Desktop window glass is enabled; menus and the composer keep their own opacity."
+          resetAction={
+            settings.windowBackgroundOpacity !==
+            DEFAULT_UNIFIED_SETTINGS.windowBackgroundOpacity ? (
+              <SettingResetButton
+                label="window background opacity"
+                onClick={() =>
+                  updateSettings({
+                    windowBackgroundOpacity: DEFAULT_UNIFIED_SETTINGS.windowBackgroundOpacity,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="flex w-full items-center gap-3 sm:w-52">
+              <output
+                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                htmlFor="window-background-opacity-control"
+              >
+                {settings.windowBackgroundOpacity}%
+              </output>
+              <input
+                aria-label="Window background opacity"
+                className="settings-slider min-w-0 flex-1"
+                id="window-background-opacity-control"
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                disabled={!isElectron}
+                value={settings.windowBackgroundOpacity}
+                style={windowBackgroundOpacitySliderStyle}
+                onChange={(event) => {
+                  const windowBackgroundOpacity = Number(event.currentTarget.value);
+                  if (
+                    Number.isInteger(windowBackgroundOpacity) &&
+                    windowBackgroundOpacity >= 0 &&
+                    windowBackgroundOpacity <= 100
+                  )
+                    updateSettings({ windowBackgroundOpacity });
+                }}
+              />
+            </div>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("grid-arcade")}
+          description="Show the monocode Pac-Man and Snake grid in empty conversations. Take control to play; Escape returns to chat. Pauses when hidden and stays still with reduced motion."
+          control={
+            <Switch
+              checked={settings.gridArcadeEnabled}
+              onCheckedChange={(checked) => updateSettings({ gridArcadeEnabled: Boolean(checked) })}
+              aria-label="Grid arcade"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("projects-column")}
+          description="Show projects beside their grouped sessions on wide screens. Uses the current project filter; takes priority over the legacy sidebar."
+          control={
+            <Switch
+              checked={settings.projectColumnEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ projectColumnEnabled: Boolean(checked) })
+              }
+              aria-label="Projects column"
+            />
+          }
+        />
         <SettingsRow
           {...searchableSetting("setting-glass-opacity")}
           description="Higher values make menus, dialogs, and the composer more solid."

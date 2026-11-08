@@ -406,7 +406,8 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
 export function useLegacySidebarEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
   const legacySidebarEnabled = useClientSettings((settings) => settings.legacySidebarEnabled);
-  return settingsHydrated && legacySidebarEnabled;
+  const projectColumnEnabled = useClientSettings((settings) => settings.projectColumnEnabled);
+  return settingsHydrated && legacySidebarEnabled && !projectColumnEnabled;
 }
 
 export async function prepareModelPreferencesPatch(

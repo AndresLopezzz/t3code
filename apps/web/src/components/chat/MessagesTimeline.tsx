@@ -242,6 +242,7 @@ import type { ThreadFindPositionReader } from "./threadFind";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
+import { ActivityIndicator } from "../ActivityIndicator";
 import { Tooltip, TooltipPopup, TooltipTrigger, TooltipScrollDismissArea } from "../ui/tooltip";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import {
@@ -1428,7 +1429,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
     return (
       <div
-        className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
+        // Clicks pass through to the empty-thread arcade behind it.
+        className="pointer-events-none flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
         style={{ paddingBottom: contentInsetEndAdjustment }}
       >
         <p className="text-sm text-muted-foreground/30">
@@ -3558,6 +3560,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+        <ActivityIndicator kind="thinking" />
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"
