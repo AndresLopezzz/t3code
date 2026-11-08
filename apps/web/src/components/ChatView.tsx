@@ -5726,6 +5726,14 @@ export default function ChatView(props: ChatViewProps) {
       : undefined;
     if (!message || message.role !== "user") return;
 
+    // Reverting to `turnCount` drops every turn after it, so a kept turn blocks any target before it.
+    const acceptedTurnCount =
+      useUiStateStore.getState().threadAcceptedTurnCountById[routeThreadKey];
+    if (acceptedTurnCount !== undefined && turnCount < acceptedTurnCount) {
+      setThreadError(activeThread.id, "This turn is kept. Reopen it before reverting.");
+      return;
+    }
+
     if (!supportsConversationRollback) {
       setThreadError(
         activeThread.id,
@@ -5804,6 +5812,19 @@ export default function ChatView(props: ChatViewProps) {
     if (phase === "running" || isSendBusy || isConnecting) {
       setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
       return;
+    }
+    // Same rule as onRevertToTurnCount. A checkpoint that isn't a turn checkpoint can't be
+    // placed against the kept turn, so it is refused while a turn is kept.
+    const acceptedTurnCount =
+      useUiStateStore.getState().threadAcceptedTurnCountById[routeThreadKey];
+    if (acceptedTurnCount !== undefined) {
+      const targetTurn = turnDiffSummaries.find(
+        (summary) => summary.checkpointId === input.checkpointId,
+      );
+      if (targetTurn === undefined || targetTurn.checkpointTurnCount < acceptedTurnCount) {
+        setThreadError(activeThread.id, "This turn is kept. Reopen it before reverting.");
+        return;
+      }
     }
     const localApi = readLocalApi();
     const confirmed =
@@ -7663,8 +7684,12 @@ export default function ChatView(props: ChatViewProps) {
     if (!paintOnlyDisplayedTimeline) void onRollbackCheckpoint(input);
   };
   const onTimelineRollbackCheckpointStable = useStableCallback(onTimelineRollbackCheckpoint);
-  const onRevertTimelineTurn = (targetTurnCount: number, messageId: MessageId) => {
-    void onRevertToTurnCountStable(targetTurnCount, messageId);
+  const onRevertTimelineTurn = (
+    targetTurnCount: number,
+    messageId: MessageId,
+    restoreFiles?: boolean,
+  ) => {
+    void onRevertToTurnCountStable(targetTurnCount, messageId, restoreFiles);
   };
   const onRevertTimelineTurnStable = useStableCallback(onRevertTimelineTurn);
 

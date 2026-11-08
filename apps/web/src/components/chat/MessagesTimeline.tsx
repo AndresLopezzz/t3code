@@ -233,6 +233,7 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestRun,
+  type TurnReviewState,
   type WorkGroupScrollAnchor,
 } from "./MessagesTimeline.logic";
 import { type ThreadFindMatch } from "./threadFind";
@@ -323,7 +324,11 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
-  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
+  onRevertToTurnCount: (
+    targetTurnCount: number,
+    messageId: MessageId,
+    restoreFiles?: boolean,
+  ) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onSendAppMessage: ((text: string) => Promise<void>) | undefined;
   onAppFullscreenChange: (rowId: string, fullscreen: boolean) => void;
@@ -487,7 +492,11 @@ interface MessagesTimelineProps {
     readonly scopeId: string;
   }) => void;
   supportsConversationRollback: boolean;
-  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
+  onRevertToTurnCount: (
+    targetTurnCount: number,
+    messageId: MessageId,
+    restoreFiles?: boolean,
+  ) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   onSendAppMessage?: (text: string) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
@@ -843,6 +852,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
       ? new Set(paintedExpandedAttemptIds).add(activeFindAttemptId)
       : paintedExpandedAttemptIds;
 
+  const acceptedTurnCount = useUiStateStore(
+    (store) => store.threadAcceptedTurnCountById[routeThreadKey] ?? null,
+  );
   const rawRows = useIncrementalTimelineRows(`${listIdentityKey}\0${workspaceRoot ?? ""}`, {
     timelineEntries,
     latestRun,
@@ -855,6 +867,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     activeTurnStartedAt,
     turnDiffSummaries,
     supportsConversationRollback,
+    acceptedTurnCount,
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
@@ -2426,7 +2439,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+              <RevertUserMessageButton
+                turnCount={revertTurnCount}
+                messageId={row.message.id}
+                blockedByAccepted={row.revertBlockedByAccepted === true}
+              />
             )}
             {resolvedContext.text && (
               <MessageCopyButton
@@ -2506,12 +2523,15 @@ function resolvePreviewAnnotationImage(input: {
 function RevertUserMessageButton({
   turnCount,
   messageId,
+  blockedByAccepted,
 }: {
   turnCount: number;
   messageId: MessageId;
+  blockedByAccepted: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
+  const label = blockedByAccepted ? "Accepted — can't revert" : "Edit from here";
 
   return (
     <Tooltip>
@@ -2521,15 +2541,15 @@ function RevertUserMessageButton({
             type="button"
             size="xs"
             variant="ghost"
-            disabled={activity.isRevertingCheckpoint || activity.isWorking}
+            disabled={activity.isRevertingCheckpoint || activity.isWorking || blockedByAccepted}
             onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
-            aria-label="Edit from here"
+            aria-label={label}
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Edit from here</TooltipPopup>
+      <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -2647,6 +2667,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           resolvedTheme={ctx.resolvedTheme}
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
+        {row.turnReview ? <TurnReviewActions review={row.turnReview} /> : null}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
             className="mt-1.5"
@@ -2658,6 +2679,53 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+function TurnReviewActions({ review }: { review: TurnReviewState }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const setAcceptedTurnCount = useUiStateStore((store) => store.setThreadAcceptedTurnCount);
+
+  const { userMessageId } = review;
+  if (review.status === "accepted") {
+    return (
+      <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Kept</span>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onClick={() => setAcceptedTurnCount(ctx.routeThreadKey, null)}
+        >
+          Reopen
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5">
+      <Button
+        type="button"
+        size="xs"
+        variant="outline"
+        onClick={() => setAcceptedTurnCount(ctx.routeThreadKey, review.turnCount)}
+      >
+        Keep
+      </Button>
+      {userMessageId !== null ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          disabled={activity.isRevertingCheckpoint || activity.isWorking}
+          onClick={() => ctx.onRevertToTurnCount(review.turnCount - 1, userMessageId, true)}
+        >
+          Undo
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

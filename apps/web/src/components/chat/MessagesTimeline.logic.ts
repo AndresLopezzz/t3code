@@ -570,6 +570,8 @@ type MessagesTimelineRowContent =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      revertBlockedByAccepted?: boolean | undefined;
+      turnReview?: TurnReviewState | undefined;
     }
   | {
       kind: "assistant-meta";
@@ -1317,6 +1319,96 @@ function deriveTimelineTurnFolds(
   });
 }
 
+export interface TurnReviewState {
+  /** `pending`: the latest unaccepted turn with file changes. `accepted`: the turn the marker sits on. */
+  readonly status: "pending" | "accepted";
+  readonly turnCount: number;
+  /** The turn's user message. Undo rewinds to it. */
+  readonly userMessageId: MessageId | null;
+}
+
+function deriveTurnReviewByAssistantMessageId(input: {
+  turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  acceptedTurnCount: number | null;
+  isWorking: boolean;
+  userMessageIdByRevertTurnCount: ReadonlyMap<number, MessageId>;
+}): Map<MessageId, TurnReviewState> {
+  const acceptedTurnCount = input.acceptedTurnCount ?? 0;
+  const reviewable: Array<{ summary: TurnDiffSummary; assistantMessageId: MessageId }> = [];
+  for (const summary of input.turnDiffSummaries) {
+    if (
+      summary.status === "ready" &&
+      summary.files.length > 0 &&
+      summary.assistantMessageId !== null
+    ) {
+      reviewable.push({ summary, assistantMessageId: summary.assistantMessageId });
+    }
+  }
+  const toReviewState = (
+    summary: TurnDiffSummary,
+    status: TurnReviewState["status"],
+  ): TurnReviewState => ({
+    status,
+    turnCount: summary.checkpointTurnCount,
+    // A turn reverts to the turn count before it, which is the key used for its user message.
+    userMessageId:
+      input.userMessageIdByRevertTurnCount.get(summary.checkpointTurnCount - 1) ?? null,
+  });
+
+  const reviewByAssistantMessageId = new Map<MessageId, TurnReviewState>();
+  const acceptedTurn = reviewable.find(
+    ({ summary }) => summary.checkpointTurnCount === input.acceptedTurnCount,
+  );
+  if (acceptedTurn) {
+    reviewByAssistantMessageId.set(
+      acceptedTurn.assistantMessageId,
+      toReviewState(acceptedTurn.summary, "accepted"),
+    );
+  }
+  if (input.isWorking) return reviewByAssistantMessageId;
+
+  let latestPending: (typeof reviewable)[number] | undefined;
+  for (const candidate of reviewable) {
+    if (candidate.summary.checkpointTurnCount <= acceptedTurnCount) continue;
+    if (
+      latestPending === undefined ||
+      candidate.summary.checkpointTurnCount > latestPending.summary.checkpointTurnCount
+    ) {
+      latestPending = candidate;
+    }
+  }
+  if (latestPending) {
+    reviewByAssistantMessageId.set(
+      latestPending.assistantMessageId,
+      toReviewState(latestPending.summary, "pending"),
+    );
+  }
+  return reviewByAssistantMessageId;
+}
+
+/** Keeping turn N accepts turns 1..N, so a revert to target T removes accepted turns only when T < N. */
+function sameTurnReview(a: TurnReviewState | undefined, b: TurnReviewState | undefined): boolean {
+  return (
+    a === b ||
+    (a !== undefined &&
+      b !== undefined &&
+      a.status === b.status &&
+      a.turnCount === b.turnCount &&
+      a.userMessageId === b.userMessageId)
+  );
+}
+
+function revertBlockedByAcceptedTurn(
+  revertTurnCount: number | undefined,
+  acceptedTurnCount: number | null,
+): boolean {
+  return (
+    revertTurnCount !== undefined &&
+    acceptedTurnCount !== null &&
+    revertTurnCount < acceptedTurnCount
+  );
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun?: TimelineLatestRun | null;
@@ -1333,6 +1425,8 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
+  /** Turns up to this checkpoint turn count are kept; they can't be reverted. */
+  acceptedTurnCount?: number | null;
   liveAgentTaskIds?: ReadonlySet<string> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
@@ -1349,6 +1443,19 @@ export function deriveMessagesTimelineRows(input: {
         checkpoints: input.turnDiffSummaries,
       })
     : new Map<MessageId, number>();
+  const acceptedTurnCount = input.acceptedTurnCount ?? null;
+  const userMessageIdByRevertTurnCount = new Map<number, MessageId>();
+  for (const [messageId, turnCount] of revertTurnCountByUserMessageId) {
+    userMessageIdByRevertTurnCount.set(turnCount, messageId);
+  }
+  const turnReviewByAssistantMessageId = input.supportsConversationRollback
+    ? deriveTurnReviewByAssistantMessageId({
+        turnDiffSummaries: input.turnDiffSummaries,
+        acceptedTurnCount,
+        isWorking: input.isWorking,
+        userMessageIdByRevertTurnCount,
+      })
+    : new Map<MessageId, TurnReviewState>();
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
     timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
@@ -1822,6 +1929,11 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "user"
           ? revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
+      revertBlockedByAccepted: revertBlockedByAcceptedTurn(
+        revertTurnCountByUserMessageId.get(timelineEntry.message.id),
+        acceptedTurnCount,
+      ),
+      turnReview: turnReviewByAssistantMessageId.get(timelineEntry.message.id),
     });
   }
 
@@ -2246,7 +2358,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
-        a.revertTurnCount === bm.revertTurnCount
+        a.revertTurnCount === bm.revertTurnCount &&
+        a.revertBlockedByAccepted === bm.revertBlockedByAccepted &&
+        sameTurnReview(a.turnReview, bm.turnReview)
       );
     }
   }

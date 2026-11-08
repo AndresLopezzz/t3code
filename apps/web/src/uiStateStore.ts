@@ -29,6 +29,7 @@ export interface PersistedUiState {
   sidebarProjectScopeKey?: string | null;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  threadAcceptedTurnCountById?: Record<string, number>;
   pullRequestMergeMethod?: string;
 }
 
@@ -41,6 +42,8 @@ export interface UiProjectState {
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  /** Turns up to and including this checkpoint turn count are kept and can't be reverted. */
+  threadAcceptedTurnCountById: Record<string, number>;
 }
 
 export interface UiEndpointState {
@@ -60,6 +63,7 @@ const initialState: UiState = {
   sidebarProjectScopeKey: null,
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
+  threadAcceptedTurnCountById: {},
   defaultAdvertisedEndpointKey: null,
   pullRequestMergeMethod: "merge",
 };
@@ -90,6 +94,18 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
   return Object.fromEntries(
     Object.entries(value).filter(
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
+    ),
+  );
+}
+
+function sanitizeTurnCountRecord(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, number] =>
+        entry[0].length > 0 && Number.isInteger(entry[1]) && entry[1] > 0,
     ),
   );
 }
@@ -149,6 +165,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
+    threadAcceptedTurnCountById: sanitizeTurnCountRecord(parsed.threadAcceptedTurnCountById),
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
@@ -227,6 +244,7 @@ export function persistState(state: UiState): void {
         sidebarProjectScopeKey: state.sidebarProjectScopeKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        threadAcceptedTurnCountById: state.threadAcceptedTurnCountById,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
@@ -310,6 +328,23 @@ export function setThreadChangedFilesExpanded(
       },
     },
   };
+}
+
+export function setThreadAcceptedTurnCount(
+  state: UiState,
+  threadId: string,
+  turnCount: number | null,
+): UiState {
+  if (state.threadAcceptedTurnCountById[threadId] === (turnCount ?? undefined)) {
+    return state;
+  }
+  const threadAcceptedTurnCountById = { ...state.threadAcceptedTurnCountById };
+  if (turnCount === null) {
+    delete threadAcceptedTurnCountById[threadId];
+  } else {
+    threadAcceptedTurnCountById[threadId] = turnCount;
+  }
+  return { ...state, threadAcceptedTurnCountById };
 }
 
 export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): UiState {
@@ -421,6 +456,7 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  setThreadAcceptedTurnCount: (threadId: string, turnCount: number | null) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
@@ -440,6 +476,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  setThreadAcceptedTurnCount: (threadId, turnCount) =>
+    set((state) => setThreadAcceptedTurnCount(state, threadId, turnCount)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setSidebarProjectScopeKey: (projectKey) =>

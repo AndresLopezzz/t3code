@@ -14,6 +14,7 @@ import {
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
   setSidebarProjectScopeKey,
+  setThreadAcceptedTurnCount,
   setThreadChangedFilesExpanded,
   type UiState,
 } from "./uiStateStore";
@@ -25,6 +26,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     sidebarProjectScopeKey: null,
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
+    threadAcceptedTurnCountById: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
     ...overrides,
@@ -40,6 +42,30 @@ describe("uiStateStore pure functions", () => {
     expect(visited.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:30:00.700Z");
     expect(markThreadVisited(visited, threadId, "2026-02-25T12:30:00.000Z")).toBe(visited);
     expect(markThreadVisited(visited, threadId, "not-a-date")).toBe(visited);
+  });
+
+  it("keeps a turn until it is reopened", () => {
+    const threadId = ThreadId.make("thread-1");
+    const kept = setThreadAcceptedTurnCount(makeUiState(), threadId, 2);
+
+    expect(kept.threadAcceptedTurnCountById[threadId]).toBe(2);
+    expect(setThreadAcceptedTurnCount(kept, threadId, 2)).toBe(kept);
+    expect(setThreadAcceptedTurnCount(kept, threadId, null).threadAcceptedTurnCountById).toEqual(
+      {},
+    );
+  });
+
+  it("drops persisted accepted turn counts that are not positive whole numbers", () => {
+    const state = parsePersistedState({
+      threadAcceptedTurnCountById: {
+        "thread-a": 2,
+        "thread-b": 0,
+        "thread-c": 1.5,
+        "thread-d": -1,
+      },
+    });
+
+    expect(state.threadAcceptedTurnCountById).toEqual({ "thread-a": 2 });
   });
 
   it("marks a completed thread unread using the server completion timestamp", () => {
@@ -209,6 +235,7 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      threadAcceptedTurnCountById: {},
     });
   });
 
@@ -331,6 +358,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      threadAcceptedTurnCountById: {},
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({

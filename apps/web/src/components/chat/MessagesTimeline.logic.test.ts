@@ -1343,6 +1343,92 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.assistantTurnDiffSummary).toBe(assistantTurnDiffSummary);
   });
 
+  describe("turn review (Keep / Undo)", () => {
+    // Two finished turns with file changes; turn 2 is the latest.
+    function deriveTwoTurnRows(input: { acceptedTurnCount?: number | null; isWorking?: boolean }) {
+      const turnDiffSummaries = [1, 2].map((turn) => ({
+        runId: `turn-${turn}` as never,
+        completedAt: `2026-01-01T00:0${turn}:30Z`,
+        assistantMessageId: `assistant-${turn}` as never,
+        checkpointTurnCount: turn,
+        checkpointRef: `checkpoint-${turn}` as never,
+        status: "ready" as const,
+        files: [{ path: `src/file-${turn}.ts`, kind: "modified", additions: 1, deletions: 0 }],
+      }));
+      const timelineEntries = [1, 2].flatMap((turn) => [
+        {
+          id: `user-entry-${turn}`,
+          kind: "message" as const,
+          createdAt: `2026-01-01T00:0${turn}:00Z`,
+          message: {
+            id: `user-${turn}` as never,
+            role: "user" as const,
+            text: `Prompt ${turn}`,
+            runId: `turn-${turn}` as never,
+            inputIntent: "turn_start" as const,
+            createdAt: `2026-01-01T00:0${turn}:00Z`,
+            updatedAt: `2026-01-01T00:0${turn}:00Z`,
+            streaming: false,
+          },
+        },
+        {
+          id: `assistant-entry-${turn}`,
+          kind: "message" as const,
+          createdAt: `2026-01-01T00:0${turn}:20Z`,
+          message: {
+            id: `assistant-${turn}` as never,
+            role: "assistant" as const,
+            text: `Done ${turn}`,
+            runId: `turn-${turn}` as never,
+            createdAt: `2026-01-01T00:0${turn}:20Z`,
+            updatedAt: `2026-01-01T00:0${turn}:30Z`,
+            streaming: false,
+          },
+        },
+      ]);
+      return deriveMessagesTimelineRows({
+        timelineEntries,
+        isWorking: input.isWorking ?? false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries,
+        supportsConversationRollback: true,
+        acceptedTurnCount: input.acceptedTurnCount ?? null,
+      });
+    }
+    const messageRow = (rows: ReturnType<typeof deriveTwoTurnRows>, id: string) =>
+      rows.find(
+        (row): row is Extract<(typeof rows)[number], { kind: "message" }> =>
+          row.kind === "message" && row.message.id === id,
+      );
+
+    it("offers Keep and Undo only on the latest turn with changes", () => {
+      const rows = deriveTwoTurnRows({});
+
+      expect(messageRow(rows, "assistant-2")?.turnReview).toEqual({
+        status: "pending",
+        turnCount: 2,
+        userMessageId: "user-2",
+      });
+      expect(messageRow(rows, "assistant-1")?.turnReview).toBeUndefined();
+    });
+
+    it("locks Edit from here on the kept turn and the turns before it only", () => {
+      const rows = deriveTwoTurnRows({ acceptedTurnCount: 1 });
+
+      expect(messageRow(rows, "assistant-1")?.turnReview?.status).toBe("accepted");
+      expect(messageRow(rows, "assistant-2")?.turnReview?.status).toBe("pending");
+      expect(messageRow(rows, "user-1")?.revertBlockedByAccepted).toBe(true);
+      expect(messageRow(rows, "user-2")?.revertBlockedByAccepted).toBe(false);
+    });
+
+    it("hides the pending Keep and Undo while a turn is running, but keeps the kept turn", () => {
+      const rows = deriveTwoTurnRows({ acceptedTurnCount: 1, isWorking: true });
+
+      expect(messageRow(rows, "assistant-2")?.turnReview).toBeUndefined();
+      expect(messageRow(rows, "assistant-1")?.turnReview?.status).toBe("accepted");
+    });
+  });
+
   it("folds the first assistant message and settled work before the terminal response", () => {
     const timelineEntries = [
       {
